@@ -1,0 +1,32 @@
+{
+    "name": "Gav",
+    "max_hp": 80,
+    "hp": 80,
+    "atk": 102,
+    "defense": 8,
+    "level": 11,
+    "exp": 435,
+    "gold": 2681,
+    "inventory": [],
+    "weapon": null,
+    "armor": null,
+    "active_quests": [],
+    "skills": [
+        {
+            "id": "slash",
+            "name": "Slash",
+            "description": "A basic slashing attack.",
+            "mp_cost": 0,
+            "power": 3,
+            "heal": 0
+        },
+        {
+            "id": "heal",
+            "name": "Cauterize",
+            "description": "Small self-heal to patch wounds.",
+            "mp_cost": 0,
+            "power": 0,
+            "heal": 10
+        }
+    ]
+}

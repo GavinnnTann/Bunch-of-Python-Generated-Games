@@ -2,86 +2,11 @@ import random
 import atexit
 import os
 import sys
+
 START_BANK = 10000
 CPU_BET_VARIANCE = 0.3  # CPUs will match player's bet ±30%
 MIN_BET = 100
 
-def take_bets(players):
-    bets = {}
-    for p in players:
-        # skip players already bankrupt
-        if p["bank"] <= 0:
-            bets[p["name"]] = 0
-            continue
-        if p["name"] == "You":
-            while True:
-                try:
-                    print(f"\nYour bank: ${p['bank']}")
-                    amt = input(f"Enter bet (min ${MIN_BET}, 0 to fold, 'a' for all-in): ").strip().lower()
-                    if amt == "a":
-                        bet = p["bank"]
-                    else:
-                        bet = int(amt)
-                except Exception:
-                    print("Enter a whole number, 0 to fold or 'a' to go all-in.")
-                    continue
-
-                if bet == 0:
-                    print("You fold this hand.")
-                    bets[p["name"]] = 0
-                    break
-                # allow all-in even if under MIN_BET
-                if amt == "a":
-                    print(f"You go all-in for ${bet}.")
-                    bets[p["name"]] = bet
-                    break
-                if bet < MIN_BET:
-                    print(f"Minimum bet is ${MIN_BET}.")
-                elif bet > p["bank"]:
-                    print("You cannot bet more than your bank.")
-                else:
-                    bets[p["name"]] = bet
-                    break
-        else:
-            # CPU betting matches the player's bet ±CPU_BET_VARIANCE (30%)
-            if p["bank"] < MIN_BET:
-                bets[p["name"]] = 0
-            else:
-                player_bet = bets.get("You", 0)
-                if player_bet > 0:
-                    low = max(MIN_BET, int(round(player_bet * (1.0 - CPU_BET_VARIANCE))))
-                    high = min(p["bank"], int(round(player_bet * (1.0 + CPU_BET_VARIANCE))))
-                    # Ensure there's a valid range to pick from
-                    if high < MIN_BET:
-                        # CPU can't meet even the minimum after matching; they fold
-                        bets[p["name"]] = 0
-                    else:
-                        if low > high:
-                            low = max(MIN_BET, min(low, high))
-                        bet = random.randint(low, high)
-                        bets[p["name"]] = bet
-                else:
-                    # If player folded or bet 0, pick a conservative random bet
-                    maxb = min(1000, p["bank"])
-                    bet = random.randint(MIN_BET, maxb)
-                    bets[p["name"]] = bet
-                print(f"{p['name']} bets ${bets[p['name']]} (bank ${p['bank']})")
-    return bets
-# Prompt to restart the whole script when the program exits normally.
-# Uses execv to re-run the current Python interpreter with the same args.
-
-def _maybe_restart_on_exit():
-    try:
-        ans = input("\nGame ended. Press 'r' + Enter to restart, or any other key to exit: ").strip().lower()
-    except Exception:
-        # non-interactive or EOF; just exit
-        return
-    if ans == "r":
-        python = sys.executable
-        os.execv(python, [python] + sys.argv)
-
-# Note: do not register this with atexit; prompt for restart explicitly after the
-# main game loop to ensure input() works reliably in interactive terminals.
 INSTRUCTIONS = (
     "Welcome to Blackjack!\n\n"
     "Overview:\n"
@@ -96,142 +21,6 @@ INSTRUCTIONS = (
     "- Play hands until a player goes bankrupt; the first bankrupt player ends the game.\n\n"
     "Press Enter to begin..."
 )
-
-def show_instructions():
-    print("\n" + "=" * 60)
-    print(INSTRUCTIONS)
-    print("=" * 60 + "\n")
-    try:
-        input()
-    except Exception:
-        # non-interactive environments may not support input()
-        pass
-show_instructions()
-
-def create_players_with_bank():
-    players = [{"name": "You", "hand": [], "bank": START_BANK}]
-    for i in range(1, 5):
-        players.append({"name": f"CPU {i}", "hand": [], "bank": START_BANK})
-    return players
-
-def settle_bets(players, bets, winners, results):
-    # Deduct all bets first
-    for p in players:
-        p["bank"] -= bets.get(p["name"], 0)
-
-    pot = sum(bets.values())
-    if pot == 0:
-        print("\nNo bets this hand.")
-        return
-
-    if not winners:
-        # everyone busted: house takes pot (pot removed already)
-        print("\nAll busted. House takes the pot.")
-        return
-
-    # If single winner and they have blackjack (and it was initial blackjack), pay 1.5x
-    # Detect blackjack winners (initial 2-card 21)
-    blackjack_pays = {}
-    if len(winners) == 1:
-        winner_name = winners[0]
-        # find player
-        p = next(x for x in players if x["name"] == winner_name)
-        if is_blackjack(p["hand"]):
-            blackjack_pays[winner_name] = 1.5
-
-    # Split pot equally among winners, applying blackjack bonus if applicable
-    splits = {}
-    base_share = pot / len(winners)
-    for w in winners:
-        multiplier = blackjack_pays.get(w, 1.0)
-        splits[w] = base_share * multiplier
-
-    # If any blackjack multipliers exist, their extra must come from the pot;
-    # we won't create additional money, so normalize: cap total paid to pot and
-    # if overpay would occur, re-normalize proportionally.
-    total_payout = sum(splits.values())
-    if total_payout > pot:
-        factor = pot / total_payout
-        for w in splits:
-            splits[w] *= factor
-
-    # Apply payouts
-    for p in players:
-        if p["name"] in splits:
-            amt = int(round(splits[p["name"]]))
-            p["bank"] += amt
-            print(f"{p['name']} wins ${amt} this hand.")
-
-def play_until_bankrupt():
-    players = create_players_with_bank()
-    round_no = 1
-    while True:
-        print("\n" + "=" * 40)
-        print(f"Round {round_no}")
-        # show banks
-        for p in players:
-            print(f"{p['name']}: ${p['bank']}")
-        # stop if any player is bankrupt
-        bankrupt = [p for p in players if p["bank"] <= 0]
-        if bankrupt:
-            for b in bankrupt:
-                print(f"\n{b['name']} is bankrupt. Game over.")
-            break
-
-        # clear hands
-        for p in players:
-            p["hand"] = []
-
-        bets = take_bets(players)
-        # if nobody bet, skip hand
-        if all(v == 0 for v in bets.values()):
-            print("No one bet. Ending game.")
-            break
-
-        # play a hand using existing helpers defined below in the file
-        deck = make_deck()
-        random.shuffle(deck)
-        deal_initial(players, deck)
-
-        # user automatic blackjack check still handled inside user_turn
-        user = players[0]
-        if is_blackjack(user["hand"]):
-            print("You have Blackjack on the deal!")
-        user_turn(user, deck)
-        for p in players[1:]:
-            computer_turn(p, deck)
-
-        winners, results = evaluate(players)
-        print_round_summary(players, results)
-        if not winners:
-            print("\nAll players busted. No winners this round.")
-        elif len(winners) == 1:
-            if winners[0] == "You":
-                print("\nYou win the hand!")
-            else:
-                print(f"\n{winners[0]} wins the hand.")
-        else:
-            if "You" in winners:
-                print("\nYou tied for the win with:", ", ".join(w for w in winners if w != "You"))
-            else:
-                print("\nTie between computers:", ", ".join(winners))
-
-        settle_bets(players, bets, winners, results)
-
-        # print updated banks so the user can always see money after the hand
-        print("\nBanks after this hand:")
-        for p in players:
-            print(f"{p['name']}: ${p['bank']}")
-
-        round_no += 1
-
-def main():
-    print("Blackjack with banking: first to go bankrupt ends the game.")
-    play_until_bankrupt()
-# test5.py
-# Simple multiplayer Blackjack: you vs 4 computer players in the same hand.
-# Run in a terminal. Enter h to hit, s to stand.
-
 
 SUITS = ["♠", "♥", "♦", "♣"]
 RANKS = ["A"] + [str(n) for n in range(2, 11)] + ["J", "Q", "K"]
@@ -320,8 +109,6 @@ def computer_turn(player, deck):
         contains_ace = any(r == "A" for r, _ in player["hand"])
         soft = False
         if contains_ace:
-            # If total - 11 + 1 <= 21 and total - 10 == 17 then it's soft 17
-            # Simpler: if total == 17 and aces > 0 then treat as soft 17
             soft = (val == 17)
 
         # CPU decision
@@ -366,6 +153,214 @@ def print_round_summary(players, results):
     for p, r in zip(players, results):
         status = "BUST" if r["busted"] else str(r["value"])
         print(f"{p['name']}: {hand_str(p['hand'])} => {status}")
+
+
+def create_players_with_bank():
+    players = [{"name": "You", "hand": [], "bank": START_BANK}]
+    for i in range(1, 5):
+        players.append({"name": f"CPU {i}", "hand": [], "bank": START_BANK})
+    return players
+
+
+def take_bets(players):
+    bets = {}
+    for p in players:
+        # skip players already bankrupt
+        if p["bank"] <= 0:
+            bets[p["name"]] = 0
+            continue
+        if p["name"] == "You":
+            while True:
+                try:
+                    print(f"\nYour bank: ${p['bank']}")
+                    amt = input(f"Enter bet (min ${MIN_BET}, 0 to fold, 'a' for all-in): ").strip().lower()
+                    if amt == "a":
+                        bet = p["bank"]
+                    else:
+                        bet = int(amt)
+                except Exception:
+                    print("Enter a whole number, 0 to fold or 'a' to go all-in.")
+                    continue
+
+                if bet == 0:
+                    print("You fold this hand.")
+                    bets[p["name"]] = 0
+                    break
+                # allow all-in even if under MIN_BET
+                if amt == "a":
+                    print(f"You go all-in for ${bet}.")
+                    bets[p["name"]] = bet
+                    break
+                if bet < MIN_BET:
+                    print(f"Minimum bet is ${MIN_BET}.")
+                elif bet > p["bank"]:
+                    print("You cannot bet more than your bank.")
+                else:
+                    bets[p["name"]] = bet
+                    break
+        else:
+            # CPU betting matches the player's bet ±CPU_BET_VARIANCE (30%)
+            if p["bank"] < MIN_BET:
+                bets[p["name"]] = 0
+            else:
+                player_bet = bets.get("You", 0)
+                if player_bet > 0:
+                    low = max(MIN_BET, int(round(player_bet * (1.0 - CPU_BET_VARIANCE))))
+                    high = min(p["bank"], int(round(player_bet * (1.0 + CPU_BET_VARIANCE))))
+                    # Ensure there's a valid range to pick from
+                    if high < MIN_BET:
+                        # CPU can't meet even the minimum after matching; they fold
+                        bets[p["name"]] = 0
+                    else:
+                        if low > high:
+                            low = max(MIN_BET, min(low, high))
+                        bet = random.randint(low, high)
+                        bets[p["name"]] = bet
+                else:
+                    # If player folded or bet 0, pick a conservative random bet
+                    maxb = min(1000, p["bank"])
+                    bet = random.randint(MIN_BET, maxb)
+                    bets[p["name"]] = bet
+                print(f"{p['name']} bets ${bets[p['name']]} (bank ${p['bank']})")
+    return bets
+
+
+def settle_bets(players, bets, winners, results):
+    # Deduct all bets first
+    for p in players:
+        p["bank"] -= bets.get(p["name"], 0)
+
+    pot = sum(bets.values())
+    if pot == 0:
+        print("\nNo bets this hand.")
+        return
+
+    if not winners:
+        # everyone busted: house takes pot (pot removed already)
+        print("\nAll busted. House takes the pot.")
+        return
+
+    # If single winner and they have blackjack (and it was initial blackjack), pay 1.5x
+    # Detect blackjack winners (initial 2-card 21)
+    blackjack_pays = {}
+    if len(winners) == 1:
+        winner_name = winners[0]
+        # find player
+        p = next(x for x in players if x["name"] == winner_name)
+        if is_blackjack(p["hand"]):
+            blackjack_pays[winner_name] = 1.5
+
+    # Split pot equally among winners, applying blackjack bonus if applicable
+    splits = {}
+    base_share = pot / len(winners)
+    for w in winners:
+        multiplier = blackjack_pays.get(w, 1.0)
+        splits[w] = base_share * multiplier
+
+    # If any blackjack multipliers exist, their extra must come from the pot;
+    # we won't create additional money, so normalize: cap total paid to pot and
+    # if overpay would occur, re-normalize proportionally.
+    total_payout = sum(splits.values())
+    if total_payout > pot:
+        factor = pot / total_payout
+        for w in splits:
+            splits[w] *= factor
+
+    # Apply payouts
+    for p in players:
+        if p["name"] in splits:
+            amt = int(round(splits[p["name"]]))
+            p["bank"] += amt
+            print(f"{p['name']} wins ${amt} this hand.")
+
+
+def play_until_bankrupt():
+    players = create_players_with_bank()
+    round_no = 1
+    while True:
+        print("\n" + "=" * 40)
+        print(f"Round {round_no}")
+        # show banks
+        for p in players:
+            print(f"{p['name']}: ${p['bank']}")
+        # remove and report bankrupt players; end only if the user is bankrupt
+        bankrupt = [p for p in players if p["bank"] <= 0]
+        if bankrupt:
+            user_bankrupt = any(p["name"] == "You" for p in bankrupt)
+            if user_bankrupt:
+                for b in bankrupt:
+                    print(f"\n{b['name']} is bankrupt. Game over.")
+                break
+            else:
+                for b in bankrupt:
+                    print(f"\n{b['name']} is bankrupt and eliminated from the game.")
+                    players.remove(b)
+
+        # clear hands
+        for p in players:
+            p["hand"] = []
+
+        bets = take_bets(players)
+        # if nobody bet, skip hand
+        if all(v == 0 for v in bets.values()):
+            print("No one bet. Ending game.")
+            break
+
+        # play a hand using existing helpers defined above in the file
+        deck = make_deck()
+        random.shuffle(deck)
+        deal_initial(players, deck)
+
+        # user automatic blackjack check still handled inside user_turn
+        user = next(p for p in players if p["name"] == "You")
+        if is_blackjack(user["hand"]):
+            print("You have Blackjack on the deal!")
+        user_turn(user, deck)
+        for p in players:
+            if p["name"] != "You":
+                computer_turn(p, deck)
+
+        winners, results = evaluate(players)
+        print_round_summary(players, results)
+        if not winners:
+            print("\nAll players busted. No winners this round.")
+        elif len(winners) == 1:
+            if winners[0] == "You":
+                print("\nYou win the hand!")
+            else:
+                print(f"\n{winners[0]} wins the hand.")
+        else:
+            if "You" in winners:
+                print("\nYou tied for the win with:", ", ".join(w for w in winners if w != "You"))
+            else:
+                print("\nTie between computers:", ", ".join(winners))
+
+        settle_bets(players, bets, winners, results)
+
+        # print updated banks so the user can always see money after the hand
+        print("\nBanks after this hand:")
+        for p in players:
+            print(f"{p['name']}: ${p['bank']}")
+
+        round_no += 1
+
+
+def show_instructions():
+    print("\n" + "=" * 60)
+    print(INSTRUCTIONS)
+    print("=" * 60 + "\n")
+    try:
+        input()
+    except Exception:
+        # non-interactive environments may not support input()
+        pass
+
+
+def main():
+    print("Blackjack with banking: first to go bankrupt ends the game.")
+    show_instructions()
+    play_until_bankrupt()
+
 
 # Entry point: run the banking game loop (players start with banks and game continues until someone is bankrupt)
 if __name__ == "__main__":
