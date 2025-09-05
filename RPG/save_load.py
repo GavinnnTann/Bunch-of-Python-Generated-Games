@@ -2,8 +2,7 @@ import time
 # save_load.py
 import json
 import os
-import os
-SAVE_FILE = os.path.join(os.path.dirname(__file__), "rpg_save.json")
+SAVE_FILE = os.path.join(os.path.dirname(__file__), "../rpg_save.json")
 
 def save_game(player):
     data = player.to_dict()

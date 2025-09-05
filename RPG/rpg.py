@@ -526,45 +526,8 @@ class Actor:
         return dmg
 
 
+# --- Player Class ---
 class Player(Actor):
-    def __init__(self, name):
-        super().__init__(name, hp=30, atk=5, defense=2)
-        self.level = 1
-        self.exp = 0
-        self.gold = 20
-        self.inventory = [
-            Item("Rusty Sword", "weapon", power=3, price=0),
-            Item("Cloth Armor", "armor", power=1, price=0),
-            Item("Minor Potion", "consumable", heal=15, price=10),
-        ]
-        self.weapon = next((i for i in self.inventory if i.type == "weapon"), None)
-        self.armor = next((i for i in self.inventory if i.type == "armor"), None)
-        self.active_quests = []
-        # simple skill list for use in combat / character progression
-        # skills are lightweight and consumable-free in this version (no MP system required)
-        self.skills = [
-            Skill("slash", "Slash", "A basic slashing attack.", mp_cost=0, power=3, heal=0),
-            Skill("heal", "Cauterize", "Small self-heal to patch wounds.", mp_cost=0, power=0, heal=10),
-        ]
-
-    def equip(self, item_name):
-        for it in self.inventory:
-            if it.name.lower() == item_name.lower():
-                if it.type == "weapon":
-                    self.weapon = it
-                    return f"Equipped {it.name} as weapon."
-                if it.type == "armor":
-                    self.armor = it
-                    return f"Equipped {it.name} as armor."
-                return "Cannot equip that item."
-        return "Item not found."
-
-    def attack_value(self):
-        return self.atk + (self.weapon.power if self.weapon else 0)
-
-    def defense_value(self):
-        return self.defense + (self.armor.power if self.armor else 0)
-
     def gain_exp(self, amount):
         self.exp += amount
         leveled = False
@@ -611,6 +574,208 @@ class Player(Actor):
         p.skills = [Skill.from_dict(s) for s in d.get("skills", [])] if d.get("skills") is not None else p.skills
         return p
 
+    def equip(self, item_name):
+        for it in self.inventory:
+            if it.name.lower() == item_name.lower():
+                if it.type == "weapon":
+                    self.weapon = it
+                    return f"Equipped {it.name} as weapon."
+                if it.type == "armor":
+                    self.armor = it
+                    return f"Equipped {it.name} as armor."
+                return "Cannot equip that item."
+        return "Item not found."
+
+    def attack_value(self):
+        return self.atk + (self.weapon.power if self.weapon else 0)
+
+    def defense_value(self):
+        return self.defense + (self.armor.power if self.armor else 0)
+
+    def __init__(self, name):
+        super().__init__(name, hp=30, atk=5, defense=2)
+        self.level = 1
+        self.exp = 0
+        self.gold = 20
+        self.inventory = [
+            Item("Rusty Sword", "weapon", power=3, price=0),
+            Item("Cloth Armor", "armor", power=1, price=0),
+            Item("Minor Potion", "consumable", heal=15, price=10),
+        ]
+        self.weapon = next((i for i in self.inventory if i.type == "weapon"), None)
+        self.armor = next((i for i in self.inventory if i.type == "armor"), None)
+        self.active_quests = []
+        self.completed_chain_quests = []  # Track completed chain quest IDs
+# Each quest unlocks the next. Final quest triggers boss battle.
+
+CHAIN_QUESTS = [
+    {
+        "id": "crown_1",
+        "title": "Rumors in the Tavern",
+        "description": "Investigate the outskirts of the village after hearing whispers of unnatural darkness.",
+        "type": "investigate",
+        "target_name": "Corrupted Wildlife",
+        "target_count": 1,
+        "level_req": 2,
+        "reward_gold": 20,
+        "reward_exp": 30,
+        "reward_items": [],
+        "story": "You find evidence of corrupted wildlife and a broken crown fragment."
+    },
+    {
+        "id": "crown_2",
+        "title": "The Scholar’s Warning",
+        "description": "Bring the crown fragment to the local scholar.",
+        "type": "deliver",
+        "target_name": "Crown Fragment",
+        "target_count": 1,
+        "level_req": 3,
+        "reward_gold": 30,
+        "reward_exp": 40,
+        "reward_items": [],
+        "story": "The scholar reveals the fragment belongs to the Crown of Blackthorne, once worn by a tyrant king who made a pact with a demon."
+    },
+    {
+        "id": "crown_3",
+        "title": "The Forgotten Catacombs",
+        "description": "Explore the catacombs beneath the ruined chapel to recover the second fragment.",
+        "type": "recover",
+        "target_name": "Second Crown Fragment",
+        "target_count": 1,
+        "level_req": 4,
+        "reward_gold": 40,
+        "reward_exp": 60,
+        "reward_items": [],
+        "story": "You face traps, skeletal guardians, and the Undying Knight."
+    },
+    {
+        "id": "crown_4",
+        "title": "The Betrayal",
+        "description": "Escort the scholar and fragments to Mount Eldric. Beware of betrayal.",
+        "type": "escort",
+        "target_name": "Scholar",
+        "target_count": 1,
+        "level_req": 5,
+        "reward_gold": 50,
+        "reward_exp": 80,
+        "reward_items": [],
+        "story": "Ambushed by mercenaries, the scholar is revealed as a cultist. The fragments are stolen."
+    },
+    {
+        "id": "crown_5",
+        "title": "The Cult’s Ritual",
+        "description": "Track the cult to their ritual site in the cursed woods.",
+        "type": "defeat",
+        "target_name": "Cultists",
+        "target_count": 3,
+        "level_req": 6,
+        "reward_gold": 60,
+        "reward_exp": 100,
+        "reward_items": [],
+        "story": "Fight through cultists and corrupted beasts. Arrive too late—the Crown is reforged."
+    },
+    {
+        "id": "crown_final",
+        "title": "The Return of King Blackthorne",
+        "description": "Defeat King Blackthorne in the abandoned throne room.",
+        "type": "boss",
+        "target_name": "King Blackthorne",
+        "target_count": 1,
+        "level_req": 7,
+        "reward_gold": 200,
+        "reward_exp": 300,
+        "reward_items": [Item("Crown Shard", "quest", price=0)],
+        "story": "Defeating him shatters the Crown forever. The kingdom is freed."
+    }
+]
+
+
+# Helper to check and offer next chain quest
+def offer_chain_quest(player):
+    completed_ids = {q.id for q in player.active_quests if q.completed}
+    # Find next quest not yet accepted or completed
+    for qdata in CHAIN_QUESTS:
+        if qdata["id"] not in completed_ids and not any(a.id == qdata["id"] for a in player.active_quests):
+            # Only offer if previous quest is completed (or it's the first)
+            idx = CHAIN_QUESTS.index(qdata)
+            if idx == 0 or CHAIN_QUESTS[idx-1]["id"] in completed_ids:
+                quest = Quest(
+                    qdata["id"], qdata["title"], qdata["description"], qdata["type"],
+                    qdata["target_name"], qdata["target_count"], qdata["level_req"],
+                    qdata["reward_gold"], qdata["reward_exp"], qdata["reward_items"]
+                )
+                quest.accepted = True
+                player.active_quests.append(quest)
+                print(f"Chain Quest Started: {quest.title}\n{qdata['story']}")
+                return True
+    return False
+
+    def equip(self, item_name):
+        for it in self.inventory:
+            if it.name.lower() == item_name.lower():
+                if it.type == "weapon":
+                    self.weapon = it
+                    return f"Equipped {it.name} as weapon."
+                if it.type == "armor":
+                    self.armor = it
+                    return f"Equipped {it.name} as armor."
+                return "Cannot equip that item."
+        return "Item not found."
+
+    def attack_value(self):
+        return self.atk + (self.weapon.power if self.weapon else 0)
+
+    def defense_value(self):
+        return self.defense + (self.armor.power if self.armor else 0)
+
+    def gain_exp(self, amount):
+        self.exp += amount
+        leveled = False
+        while self.exp >= self.level * 50:
+            self.exp -= self.level * 50
+            self.level += 1
+            self.max_hp += 5
+            leveled = True
+        return leveled
+
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "max_hp": self.max_hp,
+            "hp": self.hp,
+            "atk": self.atk,
+            "defense": self.defense,
+            "level": self.level,
+            "exp": self.exp,
+            "gold": self.gold,
+            "inventory": [it.to_dict() for it in self.inventory],
+            "weapon": self.weapon.name if self.weapon else None,
+            "armor": self.armor.name if self.armor else None,
+            "active_quests": [q.to_dict() for q in self.active_quests],
+            "skills": [s.to_dict() for s in self.skills],
+            "completed_chain_quests": self.completed_chain_quests,
+        }
+
+    @staticmethod
+    def from_dict(d):
+        p = Player(d["name"])
+        p.max_hp = d.get("max_hp", p.max_hp)
+        p.hp = d.get("hp", p.hp)
+        p.atk = d.get("atk", p.atk)
+        p.defense = d.get("defense", p.defense)
+        p.level = d.get("level", p.level)
+        p.exp = d.get("exp", p.exp)
+        p.gold = d.get("gold", p.gold)
+        # Ensure all items are Item objects
+        p.inventory = [Item.from_dict(it) if not isinstance(it, Item) else it for it in d.get("inventory", [])]
+        p.weapon = next((i for i in p.inventory if i.name == d.get("weapon")), None)
+        p.armor = next((i for i in p.inventory if i.name == d.get("armor")), None)
+        p.active_quests = [Quest.from_dict(q) for q in d.get("active_quests", [])]
+        # load skills if present (backwards compatible)
+        p.skills = [Skill.from_dict(s) for s in d.get("skills", [])] if d.get("skills") is not None else p.skills
+        p.completed_chain_quests = d.get("completed_chain_quests", [])
+        return p
+
 
 ENEMIES = [
     {"name": "Rat", "hp": 8, "atk": 2, "def": 0, "exp": 8, "gold": 3},
@@ -618,7 +783,127 @@ ENEMIES = [
     {"name": "Wolf", "hp": 18, "atk": 6, "def": 2, "exp": 28, "gold": 12},
     {"name": "Goblin", "hp": 24, "atk": 8, "def": 3, "exp": 40, "gold": 18},
     {"name": "Orc", "hp": 36, "atk": 10, "def": 4, "exp": 60, "gold": 30},
+    {"name": "Corrupted Wildlife", "hp": 20, "atk": 5, "def": 2, "exp": 25, "gold": 15},
 ]
+# Add boss enemy after ENEMIES is defined
+# Add boss enemy after ENEMIES is defined
+ENEMIES.append({
+    "name": "King Blackthorne",
+    "hp": 120,
+    "atk": 18,
+    "def": 8,
+    "exp": 300,
+    "gold": 200
+})
+
+# --- Chain Quest: The Cursed Crown ---
+# Each quest unlocks the next. Final quest triggers boss battle.
+CHAIN_QUESTS = [
+    {
+        "id": "crown_1",
+        "title": "Rumors in the Tavern",
+        "description": "Investigate the outskirts of the village after hearing whispers of unnatural darkness.",
+        "type": "investigate",
+        "target_name": "Corrupted Wildlife",
+        "target_count": 1,
+        "level_req": 2,
+        "reward_gold": 20,
+        "reward_exp": 30,
+        "reward_items": [],
+        "story": "You find evidence of corrupted wildlife and a broken crown fragment."
+    },
+    {
+        "id": "crown_2",
+        "title": "The Scholar’s Warning",
+        "description": "Bring the crown fragment to the local scholar.",
+        "type": "deliver",
+        "target_name": "Crown Fragment",
+        "target_count": 1,
+        "level_req": 3,
+        "reward_gold": 30,
+        "reward_exp": 40,
+        "reward_items": [],
+        "story": "The scholar reveals the fragment belongs to the Crown of Blackthorne, once worn by a tyrant king who made a pact with a demon."
+    },
+    {
+        "id": "crown_3",
+        "title": "The Forgotten Catacombs",
+        "description": "Explore the catacombs beneath the ruined chapel to recover the second fragment.",
+        "type": "recover",
+        "target_name": "Second Crown Fragment",
+        "target_count": 1,
+        "level_req": 4,
+        "reward_gold": 40,
+        "reward_exp": 60,
+        "reward_items": [],
+        "story": "You face traps, skeletal guardians, and the Undying Knight."
+    },
+    {
+        "id": "crown_4",
+        "title": "The Betrayal",
+        "description": "Escort the scholar and fragments to Mount Eldric. Beware of betrayal.",
+        "type": "escort",
+        "target_name": "Scholar",
+        "target_count": 1,
+        "level_req": 5,
+        "reward_gold": 50,
+        "reward_exp": 80,
+        "reward_items": [],
+        "story": "Ambushed by mercenaries, the scholar is revealed as a cultist. The fragments are stolen."
+    },
+    {
+        "id": "crown_5",
+        "title": "The Cult’s Ritual",
+        "description": "Track the cult to their ritual site in the cursed woods.",
+        "type": "defeat",
+        "target_name": "Cultists",
+        "target_count": 3,
+        "level_req": 6,
+        "reward_gold": 60,
+        "reward_exp": 100,
+        "reward_items": [],
+        "story": "Fight through cultists and corrupted beasts. Arrive too late—the Crown is reforged."
+    },
+    {
+        "id": "crown_final",
+        "title": "The Return of King Blackthorne",
+        "description": "Defeat King Blackthorne in the abandoned throne room.",
+        "type": "boss",
+        "target_name": "King Blackthorne",
+        "target_count": 1,
+        "level_req": 7,
+        "reward_gold": 200,
+        "reward_exp": 300,
+        "reward_items": [Item("Crown Shard", "quest", price=0)],
+        "story": "Defeating him shatters the Crown forever. The kingdom is freed."
+    }
+]
+
+
+# Helper to check and offer next chain quest
+def offer_chain_quest(player):
+    # Use persistent completed_chain_quests for tracking
+    completed_ids = set(player.completed_chain_quests)
+    # Mark completed chain quests
+    for q in player.active_quests:
+        if q.id.startswith("crown_") and q.completed and q.id not in player.completed_chain_quests:
+            player.completed_chain_quests.append(q.id)
+    # Find next quest not yet accepted or completed
+    for qdata in CHAIN_QUESTS:
+        if qdata["id"] not in completed_ids and not any(a.id == qdata["id"] for a in player.active_quests):
+            # Only offer if previous quest is completed (or it's the first)
+            idx = CHAIN_QUESTS.index(qdata)
+            if idx == 0 or CHAIN_QUESTS[idx-1]["id"] in completed_ids:
+                quest = Quest(
+                    qdata["id"], qdata["title"], qdata["description"], qdata["type"],
+                    qdata["target_name"], qdata["target_count"], qdata["level_req"],
+                    qdata["reward_gold"], qdata["reward_exp"], qdata["reward_items"]
+                )
+                quest.accepted = True
+                player.active_quests.append(quest)
+                print(f"Chain Quest Started: {quest.title}\n{qdata['story']}")
+                return True
+    return False
 
 
 SHOP_ITEMS = [
@@ -669,7 +954,8 @@ def game_over(player):
 def update_quests_on_kill(player, enemy_name):
     messages = []
     for q in player.active_quests:
-        if q.completed or q.type != "kill":
+        # Accept both 'kill' and 'investigate' types for chain quests
+        if q.completed or q.type.lower() not in ("kill", "investigate"):
             continue
         if q.target_name.lower() == enemy_name.lower():
             q.progress += 1
@@ -1032,6 +1318,11 @@ def quest_board(player):
                 if leveled:
                     print(f"You leveled up! You are now level {player.level}.")
                 player.active_quests.remove(q)
+                # Offer next chain quest if applicable
+                try:
+                    offer_chain_quest(player)
+                except Exception:
+                    pass
             continue
         if choice == "4":
             gather_qs = [q for q in player.active_quests if not q.completed and (q.type.lower() in ("gather", "fetch", "item"))]
@@ -1076,6 +1367,7 @@ def main():
     player = load_game()
     if player:
         print(f"Loaded saved game for {player.name}.")
+        print(f"[DEBUG] Player HP: {player.hp}, Alive: {player.is_alive()}")
     else:
         name = input("Enter your character name: ").strip() or "Adventurer"
         player = Player(name)
@@ -1083,12 +1375,7 @@ def main():
         d = input("> ").strip().lower()
         if d.startswith("e"):
             player.difficulty = Difficulty.EASY
-        elif d.startswith("h"):
-            player.difficulty = Difficulty.HARD
-        else:
-            player.difficulty = Difficulty.NORMAL
-        print(f"Good luck, {player.name}. Difficulty set to {player.difficulty.name}.")
-
+    # Always enter main menu loop if player is alive
     while True:
         if not player.is_alive():
             print("\nYou have been defeated. Game over.")
@@ -1129,8 +1416,6 @@ def main():
                 save_game(player)
                 print("Farewell.")
                 sys.exit(0)
-            else:
-                print("Continue playing.")
         else:
             print("Invalid selection.")
 

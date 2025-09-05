@@ -1,16 +1,260 @@
 {
     "name": "Gav",
-    "max_hp": 80,
-    "hp": 80,
-    "atk": 102,
+    "max_hp": 100,
+    "hp": 78,
+    "atk": 131,
     "defense": 8,
-    "level": 11,
-    "exp": 435,
-    "gold": 2681,
-    "inventory": [],
+    "level": 15,
+    "exp": 521,
+    "gold": 4937,
+    "inventory": [
+        {
+            "name": "Elven Bow",
+            "type": "weapon",
+            "power": 12,
+            "heal": 0,
+            "price": 150
+        },
+        {
+            "name": "Wood",
+            "type": "quest",
+            "power": 0,
+            "heal": 0,
+            "price": 0
+        },
+        {
+            "name": "Minor Potion",
+            "type": "consumable",
+            "power": 0,
+            "heal": 15,
+            "price": 10
+        },
+        {
+            "name": "Iron Sword",
+            "type": "weapon",
+            "power": 6,
+            "heal": 0,
+            "price": 30
+        },
+        {
+            "name": "Wood",
+            "type": "quest",
+            "power": 0,
+            "heal": 0,
+            "price": 0
+        },
+        {
+            "name": "Plate Armor",
+            "type": "armor",
+            "power": 7,
+            "heal": 0,
+            "price": 80
+        },
+        {
+            "name": "Enchanted Short Sword",
+            "type": "weapon",
+            "power": 14,
+            "heal": 0,
+            "price": 180
+        },
+        {
+            "name": "Silver Ring",
+            "type": "quest",
+            "power": 0,
+            "heal": 0,
+            "price": 0
+        },
+        {
+            "name": "Golden Amulet",
+            "type": "quest",
+            "power": 0,
+            "heal": 0,
+            "price": 0
+        },
+        {
+            "name": "Mystic Robe",
+            "type": "armor",
+            "power": 6,
+            "heal": 0,
+            "price": 140
+        },
+        {
+            "name": "Iron Ingot",
+            "type": "quest",
+            "power": 0,
+            "heal": 0,
+            "price": 0
+        },
+        {
+            "name": "Iron Sword",
+            "type": "weapon",
+            "power": 6,
+            "heal": 0,
+            "price": 30
+        },
+        {
+            "name": "Silver Ring",
+            "type": "quest",
+            "power": 0,
+            "heal": 0,
+            "price": 0
+        },
+        {
+            "name": "Silver Ring",
+            "type": "quest",
+            "power": 0,
+            "heal": 0,
+            "price": 0
+        },
+        {
+            "name": "Major Potion",
+            "type": "consumable",
+            "power": 0,
+            "heal": 40,
+            "price": 40
+        },
+        {
+            "name": "Crystal Shard",
+            "type": "quest",
+            "power": 0,
+            "heal": 0,
+            "price": 0
+        },
+        {
+            "name": "Crystal Shard",
+            "type": "quest",
+            "power": 0,
+            "heal": 0,
+            "price": 0
+        },
+        {
+            "name": "Major Potion",
+            "type": "consumable",
+            "power": 0,
+            "heal": 40,
+            "price": 40
+        },
+        {
+            "name": "Thread",
+            "type": "quest",
+            "power": 0,
+            "heal": 0,
+            "price": 0
+        },
+        {
+            "name": "Mystic Robe",
+            "type": "armor",
+            "power": 6,
+            "heal": 0,
+            "price": 140
+        },
+        {
+            "name": "Herb",
+            "type": "quest",
+            "power": 0,
+            "heal": 0,
+            "price": 0
+        },
+        {
+            "name": "Mystic Robe",
+            "type": "armor",
+            "power": 6,
+            "heal": 0,
+            "price": 140
+        },
+        {
+            "name": "Enchanted Bark",
+            "type": "quest",
+            "power": 0,
+            "heal": 0,
+            "price": 0
+        },
+        {
+            "name": "Ancient Coin",
+            "type": "quest",
+            "power": 0,
+            "heal": 0,
+            "price": 0
+        },
+        {
+            "name": "Ancient Coin",
+            "type": "quest",
+            "power": 0,
+            "heal": 0,
+            "price": 0
+        },
+        {
+            "name": "Enchanted Bark",
+            "type": "quest",
+            "power": 0,
+            "heal": 0,
+            "price": 0
+        },
+        {
+            "name": "Enchanted Short Sword",
+            "type": "weapon",
+            "power": 14,
+            "heal": 0,
+            "price": 180
+        }
+    ],
     "weapon": null,
     "armor": null,
-    "active_quests": [],
+    "active_quests": [
+        {
+            "id": "01fdb617-ff0b-46a5-b3eb-44a5be7157a4",
+            "title": "Gather Herbs",
+            "description": "Collect 3 Herbs for the herbalist.",
+            "type": "gather",
+            "target_name": "Herb",
+            "target_count": 3,
+            "progress": 0,
+            "level_req": 1,
+            "reward_gold": 10,
+            "reward_exp": 15,
+            "reward_items": [],
+            "completed": false,
+            "accepted": true
+        },
+        {
+            "id": "crown_1",
+            "title": "Rumors in the Tavern",
+            "description": "Investigate the outskirts of the village after hearing whispers of unnatural darkness.",
+            "type": "investigate",
+            "target_name": "Corrupted Wildlife",
+            "target_count": 1,
+            "progress": 0,
+            "level_req": 2,
+            "reward_gold": 20,
+            "reward_exp": 30,
+            "reward_items": [],
+            "completed": false,
+            "accepted": true
+        },
+        {
+            "id": "d3889b00-a5f6-4b0f-969b-9eaab1787bda",
+            "title": "Goblin Menace",
+            "description": "Hunt the goblins troubling the outskirts. Kill 4 Goblins.",
+            "type": "kill",
+            "target_name": "Goblin",
+            "target_count": 4,
+            "progress": 0,
+            "level_req": 3,
+            "reward_gold": 80,
+            "reward_exp": 120,
+            "reward_items": [
+                {
+                    "name": "Minor Potion",
+                    "type": "consumable",
+                    "power": 0,
+                    "heal": 15,
+                    "price": 10
+                }
+            ],
+            "completed": false,
+            "accepted": true
+        }
+    ],
     "skills": [
         {
             "id": "slash",
