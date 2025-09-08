@@ -238,6 +238,20 @@
             "power": 0,
             "heal": 0,
             "price": 0
+        },
+        {
+            "name": "Ethereal Blade",
+            "type": "weapon",
+            "power": 0,
+            "heal": 0,
+            "price": 0
+        },
+        {
+            "name": "Thunderstone Amulet",
+            "type": "armor",
+            "power": 0,
+            "heal": 0,
+            "price": 0
         }
     ],
     "weapon": "Ethereal Blade",

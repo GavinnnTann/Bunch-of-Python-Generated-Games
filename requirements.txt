@@ -19,7 +19,7 @@ xlrd>=2.0.0
 xlsxwriter>=3.0.0
 
 # GUI and visualization
-tkinter  # Usually comes with Python installation
+# tkinter is built into Python, not installed via pip
 Pillow>=9.0.0  # For image processing
 
 # Utils
