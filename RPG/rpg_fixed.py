@@ -28,7 +28,9 @@ def _patch_shop(delay=0.05):
     def enhanced_shop(player):
         while True:
             print("\n--- Marketplace ---")
-            print("1) Buy Items | 2) Sell Items | b) Back")
+            print("1) Buy Items")
+            print("2) Sell Items")
+            print("b) Back")
             choice = input("> ").strip().lower()
             if choice == "1":
                 # delegate to original shop implementation if possible
@@ -81,23 +83,6 @@ RARE_ITEM_TEMPLATES = [
     {"name": "Golden Amulet", "type": "quest", "power": 0, "heal": 0, "price": 0},
     {"name": "Runed Dagger", "type": "weapon", "power": 9, "heal": 0, "price": 95},
     {"name": "Reinforced Mail", "type": "armor", "power": 9, "heal": 0, "price": 135},
-    # New rare items
-    {"name": "Dragonscale Armor", "type": "armor", "power": 15, "heal": 0, "price": 450},
-    {"name": "Vorpal Blade", "type": "weapon", "power": 18, "heal": 0, "price": 500},
-    {"name": "Phoenix Feather", "type": "consumable", "power": 0, "heal": 150, "price": 300},
-    {"name": "Shadow Cloak", "type": "armor", "power": 12, "heal": 0, "price": 320},
-    {"name": "Flameheart Staff", "type": "weapon", "power": 16, "heal": 0, "price": 400},
-    {"name": "Thunderstone Amulet", "type": "armor", "power": 8, "heal": 0, "price": 250},
-    {"name": "Rejuvenation Elixir", "type": "consumable", "power": 0, "heal": 100, "price": 200},
-]
-
-# Special trader items that only the Wandering Trader will sell
-WANDERING_TRADER_ITEMS = [
-    {"name": "Ethereal Blade", "type": "weapon", "power": 20, "heal": 0, "price": 800},
-    {"name": "Celestial Armor", "type": "armor", "power": 18, "heal": 0, "price": 750},
-    {"name": "Kraken's Eye", "type": "consumable", "power": 0, "heal": 200, "price": 500},
-    {"name": "Wyvern Scale Shield", "type": "armor", "power": 14, "heal": 0, "price": 600},
-    {"name": "Obsidian Bow", "type": "weapon", "power": 22, "heal": 0, "price": 850}
 ]
 
 EXTRA_FINDABLES = ["Silver Ring", "Ancient Coin", "Crystal Shard", "Elixir Residue", "Enchanted Bark", "Iron Ingot"]
@@ -111,26 +96,7 @@ def _generate_traveling_merchant():
     # Create a merchant NPC carrying a small, rotated selection of rare wares
     names = ["Maris", "Tob", "Selra", "Borin", "Ketha", "Lorin"]
     count = random.randint(2, 5)
-    
-    # 20% chance to encounter the Wandering Trader with special items
-    if random.random() < 0.2:
-        name = "Wandering Trader"
-        # Mix of regular rare items and special wandering trader items
-        regular_items = random.sample(RARE_ITEM_TEMPLATES, min(2, len(RARE_ITEM_TEMPLATES)))
-        special_items = random.sample(WANDERING_TRADER_ITEMS, min(3, len(WANDERING_TRADER_ITEMS)))
-        chosen = regular_items + special_items
-        dialog = [
-            "I've traveled far and wide. Take a look at these rare treasures!",
-            "I accept gold or trade for items of equal value.",
-            "These items are from distant lands, you won't find them anywhere else.",
-            "I can offer special items for those willing to trade their valuables."
-        ]
-    else:
-        # Regular merchant with standard rare items
-        chosen = random.sample(RARE_ITEM_TEMPLATES, min(count, len(RARE_ITEM_TEMPLATES)))
-        name = f"{random.choice(names)} the Peddler"
-        dialog = ["Finest goods from far away.", "Rare wares, take a look."]
-    
+    chosen = random.sample(RARE_ITEM_TEMPLATES, min(count, len(RARE_ITEM_TEMPLATES)))
     inv = []
     for tpl in chosen:
         it = _build_item_from_tpl(tpl)
@@ -138,194 +104,39 @@ def _generate_traveling_merchant():
         markup = random.uniform(0.85, 1.5)
         it.price = max(1, int(it.price * markup))
         inv.append(it)
-    
-    return NPC(name, "merchant", dialog=dialog, inventory=inv)
+    name = f"{random.choice(names)} the Peddler"
+    return NPC(name, "merchant", dialog=["Finest goods from far away.", "Rare wares, take a look."], inventory=inv)
 
 def _merchant_shopping_session(player, merchant):
     print(f"\nYou meet {merchant.name}. They offer rare items:")
-    
-    is_wandering_trader = merchant.name == "Wandering Trader"
-    
     while True:
         if not merchant.inventory:
             print(f"{merchant.name} has nothing left to sell.")
             break
-            
-        print("\n--- Merchant Inventory ---")
         for i, it in enumerate(merchant.inventory, 1):
-            print(f"{i}. {it.name} ({it.type}) - Power: {it.power or it.heal} - {it.price} gold")
-        
-        if is_wandering_trader:
-            print("\nOptions: (b)uy | (t)rade | (l)eave")
-            choice = input("> ").strip().lower()
-            
-            if choice in ("l", "leave"):
-                break
-            elif choice in ("b", "buy"):
-                # Standard buying logic
-                print("Enter the item number to buy or (b) to go back:")
-                buy_choice = input("> ").strip().lower()
-                
-                if buy_choice in ("b", "back"):
-                    continue
-                    
-                try:
-                    idx = int(buy_choice) - 1
-                    item = merchant.inventory[idx]
-                except Exception:
-                    print("Invalid selection.")
-                    continue
-                    
-                if player.gold < item.price:
-                    print("You cannot afford that.")
-                    continue
-                    
-                player.gold -= item.price
-                player.inventory.append(Item(item.name, item.type, item.power, item.heal, item.price))
-                print(f"Purchased {item.name}.")
-                
-                # Remove one copy from merchant stock
-                merchant.inventory.pop(idx)
-                
-            elif choice in ("t", "trade"):
-                # Trading logic
-                _handle_trader_trading(player, merchant)
-                
-        else:
-            # Standard merchant just has buy option
-            print("\nEnter the item number to buy or (b) to go back:")
-            choice = input("> ").strip().lower()
-            
-            if choice in ("b", "back"):
-                break
-                
-            try:
-                idx = int(choice) - 1
-                item = merchant.inventory[idx]
-            except Exception:
-                print("Invalid selection.")
-                continue
-                
-            if player.gold < item.price:
-                print("You cannot afford that.")
-                continue
-                
-            player.gold -= item.price
-            player.inventory.append(Item(item.name, item.type, item.power, item.heal, item.price))
-            print(f"Purchased {item.name}.")
-            
-            # Remove one copy from merchant stock
-            merchant.inventory.pop(idx)
-            
-        # Merchants may leave after a few sales
-        if random.random() < 0.2:
+            print(f"{i}. {it.name} ({it.type}) - {it.price} gold")
+        print("b) Back")
+        choice = input("> ").strip().lower()
+        if choice == "b" or not choice:
+            break
+        try:
+            idx = int(choice) - 1
+            item = merchant.inventory[idx]
+        except Exception:
+            print("Invalid selection.")
+            continue
+        if player.gold < item.price:
+            print("You cannot afford that.")
+            continue
+        player.gold -= item.price
+        player.inventory.append(Item(item.name, item.type, item.power, item.heal, item.price))
+        print(f"Purchased {item.name}.")
+        # remove one copy from merchant stock
+        merchant.inventory.pop(idx)
+        # merchants may leave after a few sales
+        if random.random() < 0.3:
             print(f"{merchant.name} thanks you and moves on.")
             break
-
-def _handle_trader_trading(player, merchant):
-    """Handle the trading/bartering system with the Wandering Trader"""
-    
-    # Get player's tradeable items (weapons, armor, consumables)
-    tradeable_items = [item for item in player.inventory 
-                       if item.type in ("weapon", "armor", "consumable") 
-                       and item.name != player.weapon and item.name != player.armor]
-    
-    if not tradeable_items:
-        print("You don't have any items to trade!")
-        return
-    
-    print("\n--- Your Tradeable Items ---")
-    for i, item in enumerate(tradeable_items, 1):
-        print(f"{i}. {item.name} ({item.type}) - Power: {item.power or item.heal} - Value: {item.price} gold")
-    
-    print("\nSelect an item to trade or (b) to go back:")
-    player_choice = input("> ").strip().lower()
-    
-    if player_choice in ("b", "back"):
-        return
-        
-    try:
-        player_idx = int(player_choice) - 1
-        player_item = tradeable_items[player_idx]
-    except Exception:
-        print("Invalid selection.")
-        return
-    
-    # Find merchant items that would be a fair trade
-    trade_value = player_item.price
-    fair_trades = []
-    better_trades = []
-    worse_trades = []
-    
-    for item in merchant.inventory:
-        # Equal trade: within 20% of the player's item value
-        if abs(item.price - trade_value) <= (trade_value * 0.2):
-            fair_trades.append(item)
-        # Better trade: merchant item is worth less than player's
-        elif item.price < trade_value:
-            better_trades.append(item)
-        # Worse trade: merchant item is worth more than player's
-        else:
-            worse_trades.append(item)
-    
-    print(f"\nPossible trades for your {player_item.name} (value: {trade_value} gold):")
-    
-    print("\n--- Fair Trades (approximately equal value) ---")
-    for i, item in enumerate(fair_trades, 1):
-        print(f"{i}. {item.name} ({item.type}) - Power: {item.power or item.heal} - Value: {item.price} gold")
-    
-    print("\n--- Better Trades (you pay additional gold) ---")
-    for i, item in enumerate(worse_trades, len(fair_trades) + 1):
-        additional = item.price - trade_value
-        print(f"{i}. {item.name} ({item.type}) - Power: {item.power or item.heal} - Value: {item.price} gold (+ {additional} gold)")
-    
-    print("\n--- Lesser Trades (you receive gold back) ---")
-    for i, item in enumerate(better_trades, len(fair_trades) + len(worse_trades) + 1):
-        refund = trade_value - item.price
-        print(f"{i}. {item.name} ({item.type}) - Power: {item.power or item.heal} - Value: {item.price} gold (- {refund} gold)")
-    
-    print("\nSelect an item to trade for or (b) to go back:")
-    trade_choice = input("> ").strip().lower()
-    
-    if trade_choice in ("b", "back"):
-        return
-        
-    try:
-        trade_idx = int(trade_choice) - 1
-        # Determine which list the item is in
-        if trade_idx < len(fair_trades):
-            merchant_item = fair_trades[trade_idx]
-            gold_adjustment = 0
-        elif trade_idx < len(fair_trades) + len(worse_trades):
-            merchant_item = worse_trades[trade_idx - len(fair_trades)]
-            gold_adjustment = merchant_item.price - trade_value
-        else:
-            merchant_item = better_trades[trade_idx - len(fair_trades) - len(worse_trades)]
-            gold_adjustment = -(trade_value - merchant_item.price)
-    except Exception:
-        print("Invalid selection.")
-        return
-    
-    # Check if player can afford the trade
-    if gold_adjustment > 0 and player.gold < gold_adjustment:
-        print(f"You need an additional {gold_adjustment} gold to make this trade.")
-        return
-    
-    # Execute the trade
-    player.inventory.remove(player_item)
-    merchant.inventory.remove(merchant_item)
-    player.inventory.append(Item(merchant_item.name, merchant_item.type, merchant_item.power, merchant_item.heal, merchant_item.price))
-    player.gold -= gold_adjustment
-    
-    if gold_adjustment > 0:
-        print(f"You traded your {player_item.name} and {gold_adjustment} gold for {merchant_item.name}.")
-    elif gold_adjustment < 0:
-        print(f"You traded your {player_item.name} for {merchant_item.name} and received {-gold_adjustment} gold back.")
-    else:
-        print(f"You traded your {player_item.name} for {merchant_item.name}.")
-    
-    return
-
 
 def _new_random_world_event(player):
     r = random.random()
@@ -414,12 +225,7 @@ def _expand_world_after_load(delay=0.05):
     for tpl in additions:
         SHOP_ITEMS.append(_build_item_from_tpl(tpl))
     # add an occasional wandering merchant to NPC pool so world events can pick them up
-    TOWN_NPCS.append(NPC("Wandering Trader", "merchant", dialog=[
-        "I've traveled far and wide. Take a look at these rare treasures!",
-        "I accept gold or trade for items of equal value.",
-        "These items are from distant lands, you won't find them anywhere else.",
-        "I can offer special items for those willing to trade their valuables."
-    ]))
+    TOWN_NPCS.append(NPC("Wandering Trader", "merchant", dialog=["I've traveled far and wide. Take a look at these!"]))
     # replace the original random_world_event with the enhanced one
     globals()["random_world_event"] = _new_random_world_event
     _world_expanded = True
@@ -797,7 +603,6 @@ ENEMIES = [
     {"name": "Goblin", "hp": 24, "atk": 8, "def": 3, "exp": 40, "gold": 18},
     {"name": "Orc", "hp": 36, "atk": 10, "def": 4, "exp": 60, "gold": 30},
     {"name": "Corrupted Wildlife", "hp": 20, "atk": 5, "def": 2, "exp": 25, "gold": 15},
-    {"name": "Cultist", "hp": 30, "atk": 9, "def": 3, "exp": 55, "gold": 25},
 ]
 # Add boss enemy after ENEMIES is defined
 ENEMIES.append({
@@ -902,110 +707,40 @@ def game_over(player):
 def update_quests_on_kill(player, enemy_name):
     messages = []
     for q in player.active_quests:
-        # Determine if this kill can progress the quest
-        progress_quest = False
-        
-        # Fix pluralization issues (Cultist vs Cultists)
-        quest_target = q.target_name.lower()
-        enemy_name_lower = enemy_name.lower()
-        
-        # Handle singular/plural mismatches
-        if quest_target.endswith('s') and enemy_name_lower == quest_target[:-1]:
-            # Quest target is plural (Cultists), enemy is singular (Cultist)
-            progress_quest = True
-            print(f"DEBUG: Matched plural target {quest_target} with singular enemy {enemy_name_lower}")
-        elif enemy_name_lower.endswith('s') and quest_target == enemy_name_lower[:-1]:
-            # Quest target is singular, enemy is plural
-            progress_quest = True
-            print(f"DEBUG: Matched singular target {quest_target} with plural enemy {enemy_name_lower}")
-        # Normal kill quests and investigate quests
-        elif q.type.lower() in ("kill", "investigate") and quest_target == enemy_name_lower:
-            progress_quest = True
-        
-        # Special handling for boss quests (like crown_final)
-        elif q.type.lower() == "boss" and quest_target == enemy_name_lower:
-            progress_quest = True
-            print(f"DEBUG: Boss quest detected: {q.id} - {enemy_name}")
-        
-        # Special handling for defeat-type quests (like crown_5)
-        elif q.type.lower() == "defeat" and quest_target == enemy_name_lower:
-            progress_quest = True
-        
-        # Special handling for escort quests (auto-progress on any kill if Scholar is target)
-        elif q.type.lower() == "escort" and q.target_name == "Scholar" and q.id == "crown_4":
-            # For crown_4, any combat during an escort is considered ambush progress
-            if random.random() < 0.4:  # 40% chance to progress escort quest on any kill
-                progress_quest = True
-                messages.append("The Scholar travels with you as you fight off attackers.")
-        
-        # Skip if already completed or can't progress
-        if q.completed or not progress_quest:
+        # Accept both 'kill' and 'investigate' types for chain quests
+        if q.completed or q.type.lower() not in ("kill", "investigate"):
             continue
-        
-        # Progress the quest
-        q.progress += 1
-        messages.append(f"Progressed quest '{q.title}': {q.progress}/{q.target_count}")
-        
-        # Check if quest is now complete
-        if q.progress >= q.target_count:
-            q.completed = True
-            
-            # For chain quests, mark as completed right away
-            if (q.id.startswith("crown_") or q.id == "crown_final") and q.id not in player.completed_chain_quests:
-                player.completed_chain_quests.append(q.id)
-                
-                # Add quest-specific items for chain quests
-                if q.id == "crown_1":
-                    crown_fragment = Item("Crown Fragment", "quest", price=0)
-                    player.inventory.append(crown_fragment)
-                    messages.append(f"You found a Crown Fragment!")
-                elif q.id == "crown_3":
-                    second_fragment = Item("Second Crown Fragment", "quest", price=0)
-                    player.inventory.append(second_fragment)
-                    messages.append(f"You found a Second Crown Fragment!")
-                elif q.id == "crown_final":
-                    crown_shard = Item("Crown Shard", "quest", price=0)
-                    player.inventory.append(crown_shard)
-                    messages.append(f"You found the final Crown Shard!")
-                    messages.append("Congratulations! You have completed the Crown questline and defeated King Blackthorne!")
-                
-                # Special messages for escort and defeat quests
-                if q.id == "crown_4":
-                    messages.append("The Scholar betrays you! He was a cultist all along and steals the fragments.")
-                elif q.id == "crown_5":
-                    messages.append("You've defeated the cultists, but they've already completed the ritual to reforge the Crown.")
-                
-                # Try to offer next chain quest immediately
-                try:
-                    offer_chain_quest(player)
-                except Exception as e:
-                    print(f"Error offering next chain quest: {e}")
-            
-            messages.append(f"Quest '{q.title}' completed! Visit the quest board to claim rewards.")
-    
+        if q.target_name.lower() == enemy_name.lower():
+            q.progress += 1
+            messages.append(f"Progressed quest '{q.title}': {q.progress}/{q.target_count}")
+            if q.progress >= q.target_count:
+                q.completed = True
+                # For chain quests, mark as completed right away
+                if q.id.startswith("crown_") and q.id not in player.completed_chain_quests:
+                    player.completed_chain_quests.append(q.id)
+                    
+                    # Add quest-specific items for chain quests
+                    if q.id == "crown_1":
+                        crown_fragment = Item("Crown Fragment", "quest", price=0)
+                        player.inventory.append(crown_fragment)
+                        messages.append(f"You found a Crown Fragment!")
+                    elif q.id == "crown_3":
+                        second_fragment = Item("Second Crown Fragment", "quest", price=0)
+                        player.inventory.append(second_fragment)
+                        messages.append(f"You found a Second Crown Fragment!")
+                    
+                    # Try to offer next chain quest immediately
+                    try:
+                        offer_chain_quest(player)
+                    except Exception as e:
+                        print(f"Error offering next chain quest: {e}")
+                messages.append(f"Quest '{q.title}' completed! Visit the quest board to claim rewards.")
     return messages
 
 
 def encounter_enemy(player):
     # Choose enemy scaled to player level
-    
-    # Check if player has active cultist-related quests
-    has_cultist_quest = any(q.id == "crown_5" and not q.completed for q in player.active_quests)
-    has_escort_quest = any(q.id == "crown_4" and not q.completed for q in player.active_quests)
-    has_boss_quest = any(q.id == "crown_final" and not q.completed for q in player.active_quests)
-    
-    # Increase chance of encountering relevant enemies for specific quests
-    if has_boss_quest and random.random() < 0.8:  # 80% chance to encounter King Blackthorne during final quest
-        spec = next(e for e in ENEMIES if e["name"] == "King Blackthorne")
-        print("You have entered the abandoned throne room. King Blackthorne awaits!")
-    elif has_cultist_quest and random.random() < 0.7:  # 70% chance to encounter cultists during crown_5
-        spec = next(e for e in ENEMIES if e["name"] == "Cultist")
-    elif has_escort_quest and random.random() < 0.5:  # 50% chance for bandits or enemies that would trigger escort progress
-        choices = [e for e in ENEMIES if e["name"] in ["Bandit", "Goblin", "Orc"]]
-        spec = random.choice(choices)
-    else:
-        spec = random.choice(ENEMIES)
-    
+    spec = random.choice(ENEMIES)
     scaled = scale_enemy_spec(spec, player.level)
     enemy = Actor(scaled["name"], scaled["hp"], scaled["atk"], scaled["def"])
     combat(player, enemy, scaled.get("exp", 0), scaled.get("gold", 0))
@@ -1014,7 +749,7 @@ def encounter_enemy(player):
 def combat(player, enemy, exp_reward, gold_reward):
     while player.is_alive() and enemy.is_alive():
         print(f"\nPlayer HP: {player.hp}/{player.max_hp}  |  {enemy.name} HP: {enemy.hp}")
-        print("Choose action: (a)ttack | (s)kill | (d)efend | (u)se item | (f)lee")
+        print("Choose action: (a)ttack  (s)kill(skill)  (d)efend  (u)se item  (f)lee")
         choice = input("> ").strip().lower()
         if choice in ("a", "attack"):
             dmg = max(1, player.attack_value() - enemy.defense)
@@ -1110,27 +845,6 @@ def explore(player):
     print("\nExploring...")
     time.sleep(0.5)  # short delay for effect
 
-    # Check for active escort quest
-    escort_quest = next((q for q in player.active_quests if q.id == "crown_4" and not q.completed), None)
-    if escort_quest and random.random() < 0.3:  # 30% chance for escort event
-        # Special escort quest event
-        escort_quest.progress += 1
-        messages = []
-        messages.append(f"Progressed quest '{escort_quest.title}': {escort_quest.progress}/{escort_quest.target_count}")
-        
-        print("You escort the Scholar along the mountain path...")
-        if escort_quest.progress >= escort_quest.target_count:
-            escort_quest.completed = True
-            if escort_quest.id not in player.completed_chain_quests:
-                player.completed_chain_quests.append(escort_quest.id)
-                print("Suddenly, you're ambushed by mercenaries! The Scholar reveals himself as a cultist and steals the crown fragments.")
-                try:
-                    offer_chain_quest(player)
-                except Exception as e:
-                    print(f"Error offering next chain quest: {e}")
-            print(f"Quest '{escort_quest.title}' completed! Visit the quest board to claim rewards.")
-        return
-
     # Chance for random world event
     event_result = random_world_event(player)
     if event_result:
@@ -1186,90 +900,52 @@ def show_inventory(player):
         consumables = [it for it in player.inventory if it.type == "consumable"]
         quest_items = [it for it in player.inventory if it.type == "quest"]
         
-        # Create a flat list with indices to reference all items
-        all_items = []
-        
         print("\nWeapons:")
-        for i, it in enumerate(weapons):
+        for i, it in enumerate(weapons, 1):
             equipped = " (Equipped)" if player.weapon and player.weapon.name == it.name else ""
-            print(f"{len(all_items) + 1}. {it.name} - Power: {it.power}{equipped}")
-            all_items.append(it)
+            print(f"{i}. {it.name} - Power: {it.power}{equipped}")
             
         print("\nArmor:")
-        for i, it in enumerate(armors):
+        for i, it in enumerate(armors, 1):
             equipped = " (Equipped)" if player.armor and player.armor.name == it.name else ""
-            print(f"{len(all_items) + 1}. {it.name} - Defense: {it.power}{equipped}")
-            all_items.append(it)
+            print(f"{i+len(weapons)}. {it.name} - Defense: {it.power}{equipped}")
             
         print("\nConsumables:")
-        for i, it in enumerate(consumables):
-            print(f"{len(all_items) + 1}. {it.name} - Heal: {it.heal}")
-            all_items.append(it)
+        for i, it in enumerate(consumables, 1):
+            print(f"{i+len(weapons)+len(armors)}. {it.name} - Heal: {it.heal}")
             
         print("\nQuest Items:")
-        for i, it in enumerate(quest_items):
-            print(f"{len(all_items) + 1}. {it.name}")
-            all_items.append(it)
+        for i, it in enumerate(quest_items, 1):
+            print(f"{i+len(weapons)+len(armors)+len(consumables)}. {it.name}")
         
-        print("\nOptions: (e)quip <#> | (u)se <#> | (b)ack")
+        print("\nOptions: (e)quip <item name>  (u)se <item name>  (b)ack")
         choice = input("> ").strip().lower()
         
         if choice == "b" or not choice:
             return
             
         if choice.startswith("e "):
-            try:
-                idx = int(choice[2:].strip()) - 1
-                if 0 <= idx < len(all_items):
-                    item = all_items[idx]
-                    if item.type in ["weapon", "armor"]:
-                        result = player.equip(item.name)
-                        print(result)
-                    else:
-                        print(f"Cannot equip {item.name} (type: {item.type}).")
-                else:
-                    print("Invalid item number.")
-            except ValueError:
-                # Try by name if it's not a number
-                item_name = choice[2:].strip()
-                result = player.equip(item_name)
-                print(result)
+            item_name = choice[2:].strip()
+            result = player.equip(item_name)
+            print(result)
         elif choice.startswith("u "):
-            try:
-                idx = int(choice[2:].strip()) - 1
-                if 0 <= idx < len(all_items):
-                    item = all_items[idx]
-                    if item.type == "consumable":
+            item_name = choice[2:].strip()
+            # Find the item
+            for it in player.inventory:
+                if it.name.lower() == item_name.lower():
+                    if it.type == "consumable":
                         if player.hp < player.max_hp:
-                            heal = min(item.heal, player.max_hp - player.hp)
+                            heal = min(it.heal, player.max_hp - player.hp)
                             player.hp += heal
-                            player.inventory.remove(item)
-                            print(f"Used {item.name} and healed for {heal} HP.")
+                            player.inventory.remove(it)
+                            print(f"Used {it.name} and healed for {heal} HP.")
                         else:
                             print("You are already at full health.")
                     else:
-                        print(f"Cannot use {item.name} here.")
-                else:
-                    print("Invalid item number.")
-            except ValueError:
-                # Try by name if it's not a number
-                item_name = choice[2:].strip()
-                # Find the item
-                for it in player.inventory:
-                    if it.name.lower() == item_name.lower():
-                        if it.type == "consumable":
-                            if player.hp < player.max_hp:
-                                heal = min(it.heal, player.max_hp - player.hp)
-                                player.hp += heal
-                                player.inventory.remove(it)
-                                print(f"Used {it.name} and healed for {heal} HP.")
-                            else:
-                                print("You are already at full health.")
-                        else:
-                            print(f"Cannot use {it.name} here.")
-                        break
-                else:
-                    print("Item not found.")
+                        print(f"Cannot use {it.name} here.")
+                    break
+            else:
+                print("Item not found.")
 
 
 def show_quests(player):
@@ -1286,7 +962,7 @@ def show_quests(player):
             if quest.completed:
                 print("   Ready to turn in for rewards.")
         
-        print("\nOptions: (d)etails <#> | (t)urn in <#> | (b)ack")
+        print("\nOptions: (d)etails <#>  (t)urn in <#>  (b)ack")
         choice = input("> ").strip().lower()
         
         if choice == "b" or not choice:
@@ -1374,7 +1050,7 @@ def quest_board(player):
             print(f"{i}. {quest.title} (Level {quest.level_req})")
             print(f"   {quest.description}")
         
-        print("\nOptions: (a)ccept <#> | (b)ack")
+        print("\nOptions: (a)ccept <#>  (b)ack")
         choice = input("> ").strip().lower()
         
         if choice == "b" or not choice:
@@ -1433,7 +1109,11 @@ def crafting_menu(player):
 def town(player):
     while True:
         print("\n--- Town ---")
-        print("1. Shop | 2. Inn (Rest and Heal) | 3. Quest Board | 4. Crafting | 5. Market District | b. Back to Main")
+        print("1. Shop")
+        print("2. Inn (Rest and Heal)")
+        print("3. Quest Board")
+        print("4. Crafting")
+        print("b. Back to Main")
         
         choice = input("> ").strip().lower()
         
@@ -1451,66 +1131,10 @@ def town(player):
             quest_board(player)
         elif choice == "4":
             crafting_menu(player)
-        elif choice == "5":
-            # New option: visit the market district to find traders
-            market_district(player)
         elif choice == "b":
             return
         else:
             print("Invalid choice.")
-
-
-def market_district(player):
-    """Visit the market district to find merchants and traders"""
-    print("\nYou enter the bustling market district of town...")
-    time.sleep(0.5)
-    
-    # 50% chance to encounter the Wandering Trader
-    if random.random() < 0.5:
-        print("You notice a colorful tent with exotic goods on display.")
-        time.sleep(0.5)
-        
-        # Create the Wandering Trader with special inventory
-        trader = NPC("Wandering Trader", "merchant", dialog=[
-            "Ah, a discerning customer! Welcome to my humble establishment.",
-            "I've traveled across mountains and seas to bring these treasures.",
-            "These items have stories behind them, stories of adventure and danger.",
-            "I can offer you a fair trade for your own valuables."
-        ])
-        
-        # Give the Wandering Trader a mix of rare and special items
-        trader.inventory = []
-        
-        # Add 2-3 regular rare items
-        regular_items = random.sample(RARE_ITEM_TEMPLATES, min(3, len(RARE_ITEM_TEMPLATES)))
-        for tpl in regular_items:
-            item = _build_item_from_tpl(tpl)
-            # Give each item a random price adjustment
-            markup = random.uniform(0.9, 1.3)
-            item.price = max(1, int(item.price * markup))
-            trader.inventory.append(item)
-        
-        # Add 1-2 special wandering trader items
-        special_items = random.sample(WANDERING_TRADER_ITEMS, min(2, len(WANDERING_TRADER_ITEMS)))
-        for tpl in special_items:
-            item = _build_item_from_tpl(tpl)
-            # Special items have less price variation
-            markup = random.uniform(0.95, 1.15)
-            item.price = max(1, int(item.price * markup))
-            trader.inventory.append(item)
-        
-        # Start the trading session
-        print(f"\n{trader.name} says: \"{trader.talk()}\"")
-        _merchant_shopping_session(player, trader)
-    else:
-        # Other market events when no trader is present
-        events = [
-            "You browse the market stalls but find nothing of interest.",
-            "The market is quieter than usual today. Most merchants have ordinary goods.",
-            "You overhear merchants discussing rumors of a wandering trader with exotic items.",
-            "A group of travelers mention seeing a merchant with rare goods on the road."
-        ]
-        print(random.choice(events))
 
 
 def show_status(player):
@@ -1569,7 +1193,13 @@ def main():
     while True:
         print("\n=== Main Menu ===")
         print(f"HP: {player.hp}/{player.max_hp}  |  Level: {player.level}  |  Gold: {player.gold}")
-        print("1. Explore | 2. Town | 3. Inventory | 4. Quests | 5. Status | 6. Save Game | 7. Quit")
+        print("1. Explore")
+        print("2. Town")
+        print("3. Inventory")
+        print("4. Quests")
+        print("5. Status")
+        print("6. Save Game")
+        print("7. Quit")
         
         choice = input("\n> ").strip()
         

@@ -55,22 +55,48 @@ class Player(Actor):
         self.weapon = next((i for i in self.inventory if i.type == "weapon"), None)
         self.armor = next((i for i in self.inventory if i.type == "armor"), None)
         self.active_quests = []
+        self.completed_chain_quests = []  # Track completed chain quest IDs
         self.skills = [
             Skill("slash", "Slash", "A basic slashing attack.", mp_cost=0, power=3, heal=0),
             Skill("heal", "Cauterize", "Small self-heal to patch wounds.", mp_cost=0, power=0, heal=10),
         ]
 
-    def equip(self, item_name):
-        for it in self.inventory:
-            if it.name.lower() == item_name.lower():
-                if it.type == "weapon":
-                    self.weapon = it
-                    return f"Equipped {it.name} as weapon."
-                if it.type == "armor":
-                    self.armor = it
-                    return f"Equipped {it.name} as armor."
-                return "Cannot equip that item."
-        return "Item not found."
+    def equip(self, item_identifier):
+        """
+        Equips an item either by index or by name.
+        
+        Args:
+            item_identifier: Either an integer index into the inventory,
+                             or a string name of the item to equip.
+        """
+        # Handle both name and index-based equipping
+        if isinstance(item_identifier, int):
+            # Equipment by index in inventory
+            try:
+                if 0 <= item_identifier < len(self.inventory):
+                    it = self.inventory[item_identifier]
+                    if it.type == "weapon":
+                        self.weapon = it
+                        return f"Equipped {it.name} as weapon."
+                    if it.type == "armor":
+                        self.armor = it
+                        return f"Equipped {it.name} as armor."
+                    return f"Cannot equip {it.name} (type: {it.type})."
+                return "Invalid item number."
+            except (ValueError, IndexError):
+                return "Invalid item number."
+        else:
+            # Equipment by name (string)
+            for it in self.inventory:
+                if it.name.lower() == item_identifier.lower():
+                    if it.type == "weapon":
+                        self.weapon = it
+                        return f"Equipped {it.name} as weapon."
+                    if it.type == "armor":
+                        self.armor = it
+                        return f"Equipped {it.name} as armor."
+                    return f"Cannot equip {it.name} (type: {it.type})."
+            return "Item not found."
 
     def attack_value(self):
         return self.atk + (self.weapon.power if self.weapon else 0)
@@ -103,6 +129,7 @@ class Player(Actor):
             "armor": self.armor.name if self.armor else None,
             "active_quests": [q.to_dict() for q in self.active_quests],
             "skills": [s.to_dict() for s in self.skills],
+            "completed_chain_quests": self.completed_chain_quests,
         }
 
     @staticmethod
@@ -127,6 +154,8 @@ class Player(Actor):
         if armor_name and not p.armor:
             p.armor = Item(armor_name, "armor")
             p.inventory.append(p.armor)
-        p.active_quests = [q.from_dict(q) for q in d.get("active_quests", [])]
+        from RPG.quest import Quest  # Import here to avoid circular import
+        p.active_quests = [Quest.from_dict(q) for q in d.get("active_quests", [])]
         p.skills = [Skill.from_dict(s) for s in d.get("skills", [])] if d.get("skills") is not None else p.skills
+        p.completed_chain_quests = d.get("completed_chain_quests", [])
         return p
