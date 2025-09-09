@@ -1,0 +1,66 @@
+# Snake Game Instructions
+
+Welcome to the Snake Game! This classic game has been enhanced with pathfinding algorithms.
+
+## Game Modes
+
+1. **Manual Play**
+   - Control the snake using the arrow keys (Up, Down, Left, Right)
+   - Navigate to eat the red food dots while avoiding walls, obstacles, and your own tail
+
+2. **A* Algorithm Mode**
+   - Watch the A* algorithm control the snake automatically
+   - The A* algorithm seeks the shortest path to food using a heuristic (Manhattan distance)
+   - It's optimized to prefer direct paths to the food
+
+3. **Dijkstra Algorithm Mode**
+   - Watch Dijkstra's algorithm control the snake automatically
+   - Dijkstra's algorithm explores all possible paths based on distance from the start
+   - It performs a more exhaustive search compared to A*
+
+## Game Elements
+
+- **Green Segments**: The snake (bright green head, light green body)
+- **Red Circles**: Food (increases your score and snake length)
+- **Gray Squares**: Obstacles (avoid these)
+- **Black Background**: The game area
+
+## Rules
+
+- Score increases by 10 points each time the snake eats food
+- Every 50 points, you level up:
+  - The snake moves faster
+  - More obstacles appear
+- Game ends if the snake:
+  - Hits a wall (edge of the screen)
+  - Collides with its own body
+  - Runs into an obstacle
+
+## Algorithm Details
+
+### A* Algorithm
+- Uses a heuristic function (Manhattan distance) to guide search toward the food
+- Balances the known distance from the start with the estimated distance to the goal
+- Generally finds the shortest path using fewer computations
+- Will try to follow its tail if no path to food is available
+
+### Dijkstra's Algorithm  
+- Explores all possible paths based on distance from the start
+- Doesn't use a heuristic, so it searches in "waves" from the starting point
+- Guaranteed to find the shortest path if one exists
+- Often explores more of the board than A* before finding a solution
+
+## Controls
+
+- **Arrow Keys**: Change direction (Manual mode)
+- **R**: Restart the game after Game Over
+- The algorithm modes play automatically
+
+## Tips
+
+- Plan your moves ahead in manual mode
+- Watch how the algorithms navigate around obstacles
+- Notice the different search patterns between A* and Dijkstra
+- The game gets progressively more challenging with each level
+
+Enjoy playing and learning about pathfinding algorithms!
