@@ -14,14 +14,15 @@ A comprehensive collection of Python games, utilities, and visualization tools. 
   - [Minesweeper](#minesweeper)
   - [Race Car](#race-car)
   - [Bouncing Ball](#bouncing-ball)
+  - [Forest Fire](#forest-fire)
 - [Visualization](#visualization)
   - [3D Rendering](#3d-rendering)
-  - [4D Visualization](#4d-visualization)
   - [Kaleidoscope](#kaleidoscope)
 - [Utilities](#utilities)
   - [Excel Filter](#excel-filter)
   - [Random Number Generator](#random-number-generator)
-  - [FPS Counter](#fps-counter)
+  - [4D Number Generator](#4d-number-generator)
+  - [Aim Trainer](#aim-trainer)
 - [Installation](#installation)
 - [Usage](#usage)
 - [Contributing](#contributing)
@@ -37,7 +38,7 @@ This repository contains a diverse collection of Python projects, ranging from c
 
 A modern implementation of the classic Snake game with multiple play modes.
 
-**Files:** `Snake_Simple_Working.py`, `Snake game.py`
+**Files:** `Snake game.py`
 
 **Features:**
 - Three play modes:
@@ -51,7 +52,7 @@ A modern implementation of the classic Snake game with multiple play modes.
 
 **How to Run:**
 ```bash
-python Snake_Simple_Working.py
+python Snake game.py
 ```
 
 ### RPG Game
@@ -179,6 +180,25 @@ Physics simulation of bouncing balls with realistic behavior.
 python "Bouncing Ball.py"
 ```
 
+### Forest Fire
+
+Strategy game where you need to contain a forest fire by placing water barriers.
+
+**Directory:** `Forest Fire/`
+**Main File:** `Forest Fire.py`
+
+**Features:**
+- Challenging strategy gameplay
+- Multiple difficulty levels
+- Local highscore tracking with player names
+- Visual animations for win/loss scenarios
+- Custom grid size option
+
+**How to Run:**
+```bash
+python "Forest Fire/Forest Fire.py"
+```
+
 ## Visualization
 
 ### 3D Rendering
@@ -196,22 +216,6 @@ A 3D model viewer and renderer with advanced capabilities.
 **How to Run:**
 ```bash
 python "3D render.py"
-```
-
-### 4D Visualization
-
-Tool for visualizing 4D concepts using random entropy sources.
-
-**File:** `4D.py`
-
-**Features:**
-- Multiple entropy sources for visualization
-- Interactive display of higher-dimensional concepts
-- Mathematical exploration of 4D space
-
-**How to Run:**
-```bash
-python 4D.py
 ```
 
 ### Kaleidoscope
@@ -267,20 +271,40 @@ Advanced random number generation utility with visualization.
 python "random number.py"
 ```
 
-### FPS Counter
+### 4D Number Generator
 
-Frames-per-second measurement tool for graphics applications.
+A specialized random number generator that produces 4-digit numbers using multiple entropy sources.
 
-**File:** `fps.py`
+**File:** `4D.py`
 
 **Features:**
-- Precise timing for frame rate calculation
-- Useful for benchmarking graphics performance
-- Performance analysis tools
+- Generates 4-digit random numbers
+- Uses multiple entropy sources (System Time, OS Urandom, SHA256 Hash, Process ID, Python Random)
+- User input as additional entropy source
+- Animated digit rolling effect
+- Configurable entropy sources
 
 **How to Run:**
 ```bash
-python fps.py
+python 4D.py
+```
+
+### Aim Trainer
+
+First-person shooting style aim training game.
+
+**File:** `aim trainer.py`
+
+**Features:**
+- Target practice for improving mouse accuracy
+- Moving targets with variable speed
+- Score tracking system
+- Crosshair aiming mechanics
+- Timed challenges
+
+**How to Run:**
+```bash
+python "aim trainer.py"
 ```
 
 ## Installation
@@ -322,6 +346,7 @@ Each project can be run individually by executing its Python file as shown in th
 - **RPG Game**: Text-based commands (follow in-game instructions)
 - **Battleship**: Text-based coordinate inputs (e.g., "A5", "J10")
 - **Blackjack**: Text commands for hit, stand, and betting
+- **Aim Trainer**: Mouse movement for aim, left-click to shoot
 
 ## Contributing
 

@@ -5,7 +5,7 @@ import math
 WIDTH, HEIGHT = 800, 600
 CROSSHAIR_SIZE = 20
 TARGET_RADIUS = 30
-TARGET_SPEED = 5
+TARGET_SPEED = 10
 
 class FPSGame:
     def __init__(self, root):
