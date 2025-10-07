@@ -1,22 +1,15 @@
 {
     "name": "Gav",
     "max_hp": 125,
-    "hp": 125,
+    "hp": 105,
     "atk": 152,
     "defense": 8,
     "level": 20,
-    "exp": 462,
-    "gold": 8608,
+    "exp": 780,
+    "gold": 8816,
     "inventory": [
         {
             "name": "Second Crown Fragment",
-            "type": "quest",
-            "power": 0,
-            "heal": 0,
-            "price": 0
-        },
-        {
-            "name": "Wood",
             "type": "quest",
             "power": 0,
             "heal": 0,
@@ -38,13 +31,6 @@
         },
         {
             "name": "Golden Amulet",
-            "type": "quest",
-            "power": 0,
-            "heal": 0,
-            "price": 0
-        },
-        {
-            "name": "Iron Ingot",
             "type": "quest",
             "power": 0,
             "heal": 0,
@@ -115,13 +101,6 @@
         },
         {
             "name": "Enchanted Bark",
-            "type": "quest",
-            "power": 0,
-            "heal": 0,
-            "price": 0
-        },
-        {
-            "name": "Iron Ingot",
             "type": "quest",
             "power": 0,
             "heal": 0,
@@ -252,6 +231,13 @@
             "power": 0,
             "heal": 0,
             "price": 0
+        },
+        {
+            "name": "Sharpened Iron Sword",
+            "type": "weapon",
+            "power": 9,
+            "heal": 0,
+            "price": 60
         }
     ],
     "weapon": "Ethereal Blade",

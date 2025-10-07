@@ -32,27 +32,82 @@ A comprehensive collection of Python games, utilities, and visualization tools. 
 
 This repository contains a diverse collection of Python projects, ranging from classic games to visualization tools and utilities. The main focus is on interactive applications that demonstrate various algorithms, game mechanics, and programming techniques. Many of the games include AI components or physics simulations, making them educational as well as entertaining.
 
+## Quick Start
+
+**Most Popular Games:**
+
+1. **Snake Game with AI** (Advanced reinforcement learning)
+   ```bash
+   python play_snake.py        # Play the game
+   python train_snake.py       # Train AI agents
+   ```
+
+2. **RPG Adventure** (Text-based role-playing)
+   ```bash
+   python -m RPG.rpg
+   ```
+
+3. **Blackjack** (Card game with betting)
+   ```bash
+   python blackjack.py
+   ```
+
+For detailed instructions on each game, see the sections below.
+
 ## Games
 
 ### Snake Game
 
-A modern implementation of the classic Snake game with multiple play modes.
+An advanced implementation of the classic Snake game featuring multiple AI agents, deep reinforcement learning, and comprehensive training tools.
 
-**Files:** `Snake game.py`
+**Directory:** `Snake Game/advanced_snake/`
+**Launcher Scripts:** `play_snake.py`, `train_snake.py`
 
 **Features:**
-- Three play modes:
-  - Manual: Control the snake with arrow keys
-  - A* Algorithm: Watch the snake navigate using the A* pathfinding algorithm
-  - Dijkstra Algorithm: Watch the snake navigate using Dijkstra's pathfinding algorithm
-- Visual comparison between different pathfinding approaches
-- Obstacle avoidance and path planning
-- Progressive difficulty with increasing obstacles
-- Score tracking and game over handling
+- **Six Play Modes:**
+  - **Manual**: Control the snake with WASD or arrow keys
+  - **A* Algorithm**: Watch the snake navigate using optimal pathfinding
+  - **Dijkstra Algorithm**: Watch Dijkstra's pathfinding in action
+  - **Q-Learning AI**: Traditional reinforcement learning agent
+  - **DQN AI**: Deep Q-Network with 11 features
+  - **Enhanced DQN**: Advanced DQN with 34 features, A* reward shaping, and curriculum learning
+
+- **Advanced DQN Training System:**
+  - **Original DQN**: 11-feature state representation
+  - **Enhanced DQN**: 34-feature state with A* guidance, curriculum learning (stages: 25→60→120→250), trap detection
+  - **Training UI**: Full-featured GUI for configuring and monitoring training
+  - **Episode Continuation**: Resume training from checkpoints without restarting episode count
+  - **Model Versioning**: Create numbered model files (e.g., `snake_enhanced_dqn_1.pth`, `_2.pth`, etc.)
+  - **Model Browser**: Cycle through and select different trained models in-game
+  - **Real-time Graphs**: Monitor scores, losses, Q-values during training
+  - **GPU Acceleration**: CUDA support for faster training
+  - **Hyperparameter Control**: Adjust learning rate, batch size, epsilon decay, etc.
+
+- **Training Features:**
+  - Learning rate decay at episodes 500 & 800
+  - Curriculum-based minimum epsilon per stage
+  - A* reward shaping (0.5 → 0.0 across curriculum stages)
+  - Prioritized Experience Replay
+  - Double DQN and Dueling Network architecture
+  - Model checkpointing every 50 episodes
+
+- **Visualization & Analysis:**
+  - Network architecture visualization
+  - Feature importance analysis (gradient-based)
+  - Live state analysis with Q-value breakdown
+  - Debug mode (Press 'G') showing danger states, food direction, Q-values
 
 **How to Run:**
 ```bash
-python Snake game.py
+# Play the game
+python play_snake.py
+
+# Train AI models (opens GUI)
+python train_snake.py
+
+# Command-line training (Enhanced DQN)
+cd "Snake Game/advanced_snake"
+python train_enhanced.py --episodes 1000 --model-number 1
 ```
 
 ### RPG Game
@@ -70,7 +125,7 @@ A comprehensive text-based Role-Playing Game with rich features and mechanics.
 - Town with shops, inn, and quest board
 - Crafting system for creating items
 - Trading system with special merchants
-- Save/load functionality to persist progress
+- Save/load functionality to persist progressionality to persist progress
 
 **How to Run:**
 ```bash

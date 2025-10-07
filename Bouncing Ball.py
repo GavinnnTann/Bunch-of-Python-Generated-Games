@@ -80,7 +80,7 @@ def is_inside_polygon(x, y, vertices):
             inside = not inside
     return inside
 
-MAX_BALLS = 15  # Set your desired maximum number of balls
+MAX_BALLS = 49  # Set your desired maximum number of balls
 
 class App:
     def __init__(self, root):
