@@ -201,35 +201,50 @@ class PrioritizedReplayBuffer:
 
 class DuelingDQN(nn.Module):
     """
-    Dueling DQN architecture with separate value and advantage streams.
+    PERFORMANCE BOOST: Enhanced Dueling DQN architecture with:
+    - Larger hidden layers (512→512→256) for better feature learning
+    - Dropout layers to prevent overfitting
+    - Deeper networks for 34-feature input
     Uses ReLU activations for better performance and training stability.
     """
     def __init__(self, input_dim, output_dim):
         super(DuelingDQN, self).__init__()
         
-        # Determine hidden size based on hardware capability
-        hidden_size = DQN_HIDDEN_SIZE * 2 if is_gpu_available else DQN_HIDDEN_SIZE
+        # PERFORMANCE BOOST: Larger hidden sizes for better capacity
+        # GPU: 512 neurons, CPU: 256 neurons (doubled from original)
+        if is_gpu_available:
+            hidden_size_1 = 512
+            hidden_size_2 = 512
+            hidden_size_3 = 256
+        else:
+            hidden_size_1 = 256
+            hidden_size_2 = 256
+            hidden_size_3 = 128
         
-        # Feature extraction layers without batch normalization
+        # PERFORMANCE BOOST: Deeper feature extraction with dropout
         self.feature_layer = nn.Sequential(
-            nn.Linear(input_dim, hidden_size),
+            nn.Linear(input_dim, hidden_size_1),
             nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
+            nn.Dropout(0.2),  # 20% dropout to prevent overfitting
+            nn.Linear(hidden_size_1, hidden_size_2),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(hidden_size_2, hidden_size_3),
             nn.ReLU()
         )
         
         # Value stream - estimates V(s)
         self.value_stream = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size // 2),
+            nn.Linear(hidden_size_3, 128),
             nn.ReLU(),
-            nn.Linear(hidden_size // 2, 1)
+            nn.Linear(128, 1)
         )
         
         # Advantage stream - estimates A(s,a)
         self.advantage_stream = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size // 2),
+            nn.Linear(hidden_size_3, 128),
             nn.ReLU(),
-            nn.Linear(hidden_size // 2, output_dim)
+            nn.Linear(128, output_dim)
         )
     
     def forward(self, x):
@@ -452,9 +467,15 @@ class AdvancedDQNAgent:
         Perform a single optimization step on the model using prioritized experience replay.
         Optimized for GPU acceleration when available.
         """
-        # Check if we have enough samples in memory
+        # PERFORMANCE BOOST: Replay buffer warm-up - don't train until we have substantial data
+        # This ensures better initial training quality with diverse experiences
+        MIN_REPLAY_SIZE = 1000  # Warm-up threshold
+        
+        if len(self.memory) < MIN_REPLAY_SIZE:
+            return 0  # Still collecting experiences, don't train yet
+        
         if len(self.memory) < self.batch_size:
-            return 0
+            return 0  # Not enough for a batch
         
         # Sample from memory with priorities
         experiences, indices, weights = self.memory.sample(self.batch_size, beta=self.beta)

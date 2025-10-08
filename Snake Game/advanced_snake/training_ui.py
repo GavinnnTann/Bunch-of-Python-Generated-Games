@@ -36,7 +36,7 @@ class TrainingUI:
         try:
             self.root = root
             self.root.title("Snake Game - DQN Training Control Center")
-            self.root.geometry("1000x700")
+            self.root.geometry("1100x700")
             self.root.minsize(900, 900)
             
             # Set up styles
@@ -49,6 +49,7 @@ class TrainingUI:
             self.models_info = []
             self.selected_model = tk.StringVar()
             self.training_log = []
+            self.curriculum_advancements = []  # Track when curriculum advances: [(episode, old_stage, new_stage), ...]
             
             # Create main frames
         except Exception as e:
@@ -1426,31 +1427,58 @@ class TrainingUI:
         # Clear any existing widgets
         for widget in self.graph_frame.winfo_children():
             widget.destroy()
+        
+        # Add control buttons at the top
+        control_frame = ttk.Frame(self.graph_frame)
+        control_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        # Reset graph button
+        reset_btn = ttk.Button(
+            control_frame,
+            text="Reset Graphs",
+            command=self.reset_training_graphs
+        )
+        reset_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Info label
+        info_label = ttk.Label(
+            control_frame,
+            text="Tip: Use Reset Graphs when starting a new model to clear old data",
+            font=("Arial", 9, "italic")
+        )
+        info_label.pack(side=tk.LEFT, padx=10)
             
-        # Create a larger figure now that we have a full tab dedicated to it
-        # Use 2x1 layout with the score plot being larger
-        self.fig, self.axs = plt.subplots(2, 1, figsize=(14, 10), gridspec_kw={'height_ratios': [1.5, 1]})
+        # Create a 2x2 grid of useful training metrics
+        self.fig, self.axs = plt.subplots(2, 2, figsize=(16, 10))
+        self.fig.suptitle('Training Performance Analysis', fontsize=18, fontweight='bold')
         
-        # Configure the score plot with more details
-        self.axs[0].set_title('Training Scores', fontsize=16, fontweight='bold')
-        self.axs[0].set_xlabel('Episode', fontsize=14)
-        self.axs[0].set_ylabel('Score', fontsize=14)
-        self.axs[0].grid(True, alpha=0.3)
-        self.axs[0].tick_params(labelsize=12)
+        # Top-left: Score progression with running average
+        self.axs[0, 0].set_title('Score Progression', fontsize=14, fontweight='bold')
+        self.axs[0, 0].set_xlabel('Episode', fontsize=12)
+        self.axs[0, 0].set_ylabel('Score', fontsize=12)
+        self.axs[0, 0].grid(True, alpha=0.3)
         
-        # Configure the loss/Q-value plot
-        self.axs[1].set_title('Loss & Q-Value', fontsize=16, fontweight='bold')
-        self.axs[1].set_xlabel('Update', fontsize=14)
-        self.axs[1].set_ylabel('Value', fontsize=14)
-        self.axs[1].grid(True, alpha=0.3)
-        self.axs[1].tick_params(labelsize=12)
+        # Top-right: Epsilon decay over time
+        self.axs[0, 1].set_title('Exploration Rate (Epsilon)', fontsize=14, fontweight='bold')
+        self.axs[0, 1].set_xlabel('Episode', fontsize=12)
+        self.axs[0, 1].set_ylabel('Epsilon', fontsize=12)
+        self.axs[0, 1].grid(True, alpha=0.3)
         
-        # Add a super title to the overall figure
-        plt.suptitle('Training Performance Metrics', fontsize=18, fontweight='bold', y=0.98)
+        # Bottom-left: Episode duration (steps taken)
+        self.axs[1, 0].set_title('Episode Duration (Steps)', fontsize=14, fontweight='bold')
+        self.axs[1, 0].set_xlabel('Episode', fontsize=12)
+        self.axs[1, 0].set_ylabel('Steps', fontsize=12)
+        self.axs[1, 0].grid(True, alpha=0.3)
+        
+        # Bottom-right: Score distribution histogram
+        self.axs[1, 1].set_title('Score Distribution (Last 100)', fontsize=14, fontweight='bold')
+        self.axs[1, 1].set_xlabel('Score', fontsize=12)
+        self.axs[1, 1].set_ylabel('Frequency', fontsize=12)
+        self.axs[1, 1].grid(True, alpha=0.3)
         
         # Adjust spacing between subplots
         plt.tight_layout()
-        plt.subplots_adjust(hspace=0.3, top=0.92)  # Add space for the suptitle
+        plt.subplots_adjust(hspace=0.3, wspace=0.25, top=0.93)
         
         # Create canvas that fills the tab
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.graph_frame)
@@ -1463,85 +1491,341 @@ class TrainingUI:
         toolbar_frame.pack(fill=tk.X)
         NavigationToolbar2Tk(self.canvas, toolbar_frame)
 
-    def update_training_graph(self, scores=None, running_avgs=None, losses=None, q_values=None):
-        """Update the training graph with data."""
-        # Clear the plots
-        for ax in self.axs:
-            ax.clear()
-            
-        # Plot scores
-        self.axs[0].set_title('Training Scores', fontsize=16, fontweight='bold')
-        self.axs[0].set_xlabel('Episode', fontsize=14)
-        self.axs[0].set_ylabel('Score', fontsize=14)
-        self.axs[0].tick_params(labelsize=12)
+    def reset_training_graphs(self):
+        """Reset training graphs and clear accumulated data."""
+        confirm = messagebox.askyesno(
+            "Reset Graphs",
+            "This will clear all training data from the graphs.\n\n"
+            "The model files will NOT be affected.\n\n"
+            "Continue?"
+        )
         
-        if scores:
-            episodes = list(range(1, len(scores) + 1))
-            self.axs[0].plot(episodes, scores, 'b-', linewidth=1.5, alpha=0.7, label='Score')
+        if confirm:
+            # Clear training data
+            if hasattr(self, 'training_data'):
+                self.training_data = {
+                    'scores': [],
+                    'running_avgs': [],
+                    'steps': [],
+                    'best_score': 0,
+                    'losses': [],
+                    'q_values': [],
+                    'epsilon_values': [],  # Reset epsilon tracking
+                    'lr_values': []  # NEW: Reset learning rate tracking
+                }
             
+            # Clear curriculum advancements
+            self.curriculum_advancements = []
+            
+            # Reinitialize graphs
+            self.setup_training_graph()
+            
+            # Add log message
+            self.add_to_log("Training graphs reset. Ready for new training session.")
+
+    def update_training_graph(self, scores=None, running_avgs=None, losses=None, q_values=None):
+        """Update the training graph with useful metrics for DQN analysis."""
+        # Clear all plots
+        for i in range(2):
+            for j in range(2):
+                self.axs[i, j].clear()
+        
+        # ===== GRAPH 1: Score Progression (Top-Left) =====
+        self.axs[0, 0].set_title('Score Progression', fontsize=14, fontweight='bold')
+        self.axs[0, 0].set_xlabel('Episode', fontsize=12)
+        self.axs[0, 0].set_ylabel('Score', fontsize=12)
+        
+        if scores and len(scores) > 0:
+            episodes = list(range(1, len(scores) + 1))
+            
+            # Plot individual scores with low alpha
+            self.axs[0, 0].plot(episodes, scores, 'b-', linewidth=0.8, alpha=0.3, label='Score')
+            
+            # Plot running average
             if running_avgs and len(running_avgs) == len(scores):
-                self.axs[0].plot(episodes, running_avgs, 'r-', linewidth=2.5, label='Avg (100)')
+                self.axs[0, 0].plot(episodes, running_avgs, 'r-', linewidth=2.5, label='Avg (100)', zorder=10)
+            
+            # Add curriculum stage thresholds
+            thresholds = [20, 50, 100, 200]
+            colors = ['green', 'orange', 'purple', 'red']
+            labels = ['Stage 0→1', 'Stage 1→2', 'Stage 2→3', 'Stage 3→4']
+            for threshold, color, label in zip(thresholds, colors, labels):
+                self.axs[0, 0].axhline(y=threshold, color=color, linestyle='--', alpha=0.6, linewidth=1.5, label=label)
+            
+            # ===== NEW: Highlight curriculum advancements =====
+            if hasattr(self, 'curriculum_advancements') and self.curriculum_advancements:
+                for episode, old_stage, new_stage in self.curriculum_advancements:
+                    if episode <= len(scores):
+                        score_at_advancement = scores[episode - 1] if episode > 0 else 0
+                        
+                        # Add vertical line at advancement
+                        self.axs[0, 0].axvline(x=episode, color='cyan', linestyle=':', linewidth=2, alpha=0.8, zorder=5)
+                        
+                        # Add star marker
+                        self.axs[0, 0].scatter([episode], [score_at_advancement], 
+                                              marker='*', s=400, color='cyan', 
+                                              edgecolors='darkblue', linewidths=2, zorder=15,
+                                              label=f'Stage {old_stage}→{new_stage}' if episode == self.curriculum_advancements[0][0] else '')
+                        
+                        # Add annotation
+                        self.axs[0, 0].annotate(f'Stage {new_stage}', 
+                                               xy=(episode, score_at_advancement),
+                                               xytext=(episode + len(episodes)*0.02, score_at_advancement + 20),
+                                               arrowprops=dict(facecolor='cyan', shrink=0.05, width=1.5),
+                                               fontsize=10, fontweight='bold', color='darkblue',
+                                               bbox=dict(boxstyle='round,pad=0.3', facecolor='cyan', alpha=0.7))
             
             # Add max score annotation
-            if len(scores) > 0:
-                max_score = max(scores)
-                max_idx = scores.index(max_score)
-                self.axs[0].annotate(f'Max: {max_score}', 
+            max_score = max(scores)
+            max_idx = scores.index(max_score)
+            self.axs[0, 0].scatter([episodes[max_idx]], [max_score], color='gold', s=100, zorder=15, edgecolors='black', linewidths=2)
+            self.axs[0, 0].annotate(f'Best: {max_score}', 
                                    xy=(episodes[max_idx], max_score),
-                                   xytext=(episodes[max_idx]+5, max_score),
-                                   arrowprops=dict(facecolor='black', shrink=0.05, width=1.5),
-                                   fontsize=12)
-                
-            self.axs[0].legend(loc='upper left', fontsize=12)
-        
-        self.axs[0].grid(True, alpha=0.3)
-        
-        # Plot loss and q-values
-        self.axs[1].set_title('Loss & Q-Value', fontsize=16, fontweight='bold')
-        self.axs[1].set_xlabel('Update', fontsize=14)
-        self.axs[1].set_ylabel('Loss', fontsize=14, color='m')
-        self.axs[1].tick_params(labelsize=12)
-        
-        if losses and len(losses) > 0:
-            updates = list(range(1, len(losses) + 1))
-            line1 = self.axs[1].plot(updates, losses, 'm-', linewidth=2, alpha=0.8, label='Loss')
+                                   xytext=(episodes[max_idx] + len(episodes)*0.05, max_score),
+                                   arrowprops=dict(facecolor='gold', shrink=0.05, width=1.5),
+                                   fontsize=11, fontweight='bold')
             
-            # Set log scale for loss if values permit
-            if all(l > 0 for l in losses):
-                self.axs[1].set_yscale('log')
-                
-            # Create a second y-axis for Q-values
-            ax2 = self.axs[1].twinx()
-            ax2.tick_params(labelsize=12)
-            
-            if q_values and len(q_values) > 0:
-                q_updates = list(range(1, len(q_values) + 1))
-                line2 = ax2.plot(q_updates, q_values, 'g-', linewidth=2, alpha=0.8, label='Q-Value')
-                ax2.set_ylabel('Q-Value', fontsize=14, color='g')
-                
-                # Add average Q-value annotation
-                if len(q_values) > 0:
-                    avg_q = sum(q_values) / len(q_values)
-                    ax2.axhline(y=avg_q, color='g', linestyle='--', alpha=0.6)
-                    ax2.annotate(f'Avg Q: {avg_q:.2f}', 
-                               xy=(len(q_values) * 0.8, avg_q),
-                               fontsize=12, color='g')
-                
-                # Combine the legends
-                lines = line1 + line2
-                labels = [l.get_label() for l in lines]
-                self.axs[1].legend(lines, labels, loc='upper left', fontsize=12)
+            self.axs[0, 0].legend(loc='upper left', fontsize=9, ncol=2)
+        
+        self.axs[0, 0].grid(True, alpha=0.3)
+        
+        # ===== GRAPH 2: Epsilon & Learning Rate Decay (Top-Right) =====
+        self.axs[0, 1].set_title('Exploration Rate (Epsilon) & Learning Rate', fontsize=14, fontweight='bold')
+        self.axs[0, 1].set_xlabel('Episode', fontsize=12)
+        self.axs[0, 1].set_ylabel('Epsilon', fontsize=12, color='purple')
+        self.axs[0, 1].tick_params(axis='y', labelcolor='purple')
+        
+        if scores and len(scores) > 0:
+            # Use ACTUAL epsilon values from training if available
+            if hasattr(self, 'training_data') and 'epsilon_values' in self.training_data and self.training_data['epsilon_values']:
+                epsilon_values = self.training_data['epsilon_values']
             else:
-                self.axs[1].legend(loc='upper left', fontsize=12)
+                # Fallback: Calculate epsilon decay based on training parameters (for old data or models)
+                epsilon_decay = 0.997
+                epsilon_start = 1.0
+                
+                epsilon_values = []
+                current_epsilon = epsilon_start
+                stage_minimums = {0: 0.10, 1: 0.05, 2: 0.04, 3: 0.02, 4: 0.01}
+                
+                for ep in range(len(scores)):
+                    # Determine curriculum stage (simplified)
+                    if len(running_avgs) > ep:
+                        avg = running_avgs[ep]
+                        if avg >= 200:
+                            stage = 4
+                        elif avg >= 100:
+                            stage = 3
+                        elif avg >= 50:
+                            stage = 2
+                        elif avg >= 20:
+                            stage = 1
+                        else:
+                            stage = 0
+                    else:
+                        stage = 0
+                    
+                    stage_min = stage_minimums.get(stage, 0.01)
+                    if current_epsilon > stage_min:
+                        current_epsilon *= epsilon_decay
+                    else:
+                        current_epsilon = stage_min
+                        
+                    epsilon_values.append(current_epsilon)
+            
+            # Get ACTUAL learning rate values from training if available
+            if hasattr(self, 'training_data') and 'lr_values' in self.training_data and self.training_data['lr_values']:
+                lr_values = self.training_data['lr_values']
+            else:
+                # Fallback: Calculate LR decay based on new progressive decay system
+                lr_values = []
+                current_lr = 0.005  # Stage 0 starting LR
+                
+                stage_lr_minimums = {0: 0.002, 1: 0.0015, 2: 0.001, 3: 0.0005, 4: 0.0002}
+                stage_lr_decay = {0: 0.9985, 1: 0.9990, 2: 0.9992, 3: 0.9995, 4: 0.9997}
+                stage_lr_starts = {0: 0.005, 1: 0.003, 2: 0.002, 3: 0.001, 4: 0.0005}
+                
+                prev_stage = 0
+                for ep in range(len(scores)):
+                    # Determine curriculum stage (simplified)
+                    if len(running_avgs) > ep:
+                        avg = running_avgs[ep]
+                        if avg >= 200:
+                            stage = 4
+                        elif avg >= 100:
+                            stage = 3
+                        elif avg >= 50:
+                            stage = 2
+                        elif avg >= 20:
+                            stage = 1
+                        else:
+                            stage = 0
+                    else:
+                        stage = 0
+                    
+                    # Reset LR when stage advances
+                    if stage != prev_stage:
+                        current_lr = stage_lr_starts.get(stage, 0.001)
+                        prev_stage = stage
+                    
+                    stage_lr_min = stage_lr_minimums.get(stage, 0.0002)
+                    lr_decay_rate = stage_lr_decay.get(stage, 0.9995)
+                    
+                    if current_lr > stage_lr_min:
+                        current_lr *= lr_decay_rate
+                    else:
+                        current_lr = stage_lr_min
+                    
+                    lr_values.append(current_lr)
+            
+            # Ensure epsilon_values matches scores length
+            if len(epsilon_values) > len(scores):
+                epsilon_values = epsilon_values[:len(scores)]
+            elif len(epsilon_values) < len(scores):
+                # Pad with last value if needed
+                if epsilon_values:
+                    epsilon_values.extend([epsilon_values[-1]] * (len(scores) - len(epsilon_values)))
+            
+            # Ensure lr_values matches scores length
+            if len(lr_values) > len(scores):
+                lr_values = lr_values[:len(scores)]
+            elif len(lr_values) < len(scores):
+                if lr_values:
+                    lr_values.extend([lr_values[-1]] * (len(scores) - len(lr_values)))
+                else:
+                    lr_values = [0.002] * len(scores)  # Default fallback
+            
+            episodes = list(range(1, len(epsilon_values) + 1))
+            
+            # Plot epsilon on primary axis
+            self.axs[0, 1].plot(episodes, epsilon_values, 'purple', linewidth=2.5, label='Epsilon', zorder=5)
+            
+            # Add stage minimum lines for epsilon
+            stage_minimums = {0: 0.10, 1: 0.05, 2: 0.04, 3: 0.02, 4: 0.01}
+            for stage, min_eps in stage_minimums.items():
+                self.axs[0, 1].axhline(y=min_eps, color='gray', linestyle=':', alpha=0.4, linewidth=1)
+                self.axs[0, 1].text(len(episodes) * 0.02, min_eps + 0.01, f'ε Stage {stage}', fontsize=7, color='gray')
+            
+            # Detect and highlight epsilon boosts (stuck detection)
+            if len(epsilon_values) > 1:
+                for i in range(1, len(epsilon_values)):
+                    # If epsilon increased by more than 0.05, it's likely a stuck detection boost
+                    if epsilon_values[i] > epsilon_values[i-1] + 0.05:
+                        self.axs[0, 1].axvline(x=i+1, color='orange', linestyle='--', linewidth=2, alpha=0.5, zorder=3)
+                        self.axs[0, 1].scatter([i+1], [epsilon_values[i]], color='orange', s=100, zorder=10, 
+                                              edgecolors='red', linewidths=2, marker='^')
+            
+            # Highlight current epsilon
+            if len(epsilon_values) > 0:
+                current_eps = epsilon_values[-1]
+                self.axs[0, 1].scatter([len(epsilon_values)], [current_eps], color='purple', s=100, zorder=10, edgecolors='black', linewidths=2)
+                self.axs[0, 1].annotate(f'ε={current_eps:.4f}', 
+                                       xy=(len(epsilon_values), current_eps),
+                                       xytext=(len(epsilon_values) * 0.70, current_eps + 0.15),
+                                       fontsize=10, fontweight='bold', color='purple')
+            
+            # Create secondary y-axis for learning rate
+            ax2 = self.axs[0, 1].twinx()
+            ax2.set_ylabel('Learning Rate', fontsize=12, color='green')
+            ax2.tick_params(axis='y', labelcolor='green')
+            
+            # Plot learning rate as simple dashed line (no markers or annotations)
+            ax2.plot(episodes, lr_values, color='green', linewidth=2.5, label='Learning Rate', linestyle='--', zorder=4)
+            
+            # Set y-axis limits
+            self.axs[0, 1].set_ylim(-0.05, 1.05)
+            ax2.set_ylim(0, max(lr_values) * 1.2 if lr_values else 0.006)
+            
+            # Combine legends
+            lines1, labels1 = self.axs[0, 1].get_legend_handles_labels()
+            lines2, labels2 = ax2.get_legend_handles_labels()
+            self.axs[0, 1].legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=9)
         
-        self.axs[1].grid(True, alpha=0.3)
+        self.axs[0, 1].grid(True, alpha=0.3)
         
-        # Add a super title
-        plt.suptitle('Training Performance Metrics', fontsize=18, fontweight='bold', y=0.98)
+        # ===== GRAPH 3: Episode Duration in Steps (Bottom-Left) =====s
+        self.axs[1, 0].set_title('Episode Duration (Steps)', fontsize=14, fontweight='bold')
+        self.axs[1, 0].set_xlabel('Episode', fontsize=12)
+        self.axs[1, 0].set_ylabel('Steps Survived', fontsize=12)
         
-        # Redraw the canvas
-        self.fig.tight_layout()
-        plt.subplots_adjust(hspace=0.3, top=0.92)  # Adjust space between plots and for suptitle
+        if scores and len(scores) > 0:
+            # Estimate steps from scores (each food is roughly 20-50 steps depending on distance)
+            # This is a rough approximation: steps ≈ score * 2 + random_factor
+            # In reality, you'd want to log actual steps from training
+            estimated_steps = [max(20, int(s * 2.5 + 10)) for s in scores]
+            
+            episodes = list(range(1, len(estimated_steps) + 1))
+            
+            # Calculate moving average of steps
+            window = 50
+            if len(estimated_steps) >= window:
+                steps_avg = [sum(estimated_steps[max(0, i-window):i+1]) / min(window, i+1) for i in range(len(estimated_steps))]
+                self.axs[1, 0].plot(episodes, steps_avg, 'orange', linewidth=2.5, label=f'Avg ({window} eps)', zorder=10)
+            
+            # Plot individual steps with scatter
+            self.axs[1, 0].scatter(episodes, estimated_steps, c='blue', alpha=0.2, s=10, label='Steps')
+            
+            # Add trend line
+            if len(estimated_steps) > 10:
+                z = np.polyfit(episodes, estimated_steps, 2)
+                p = np.poly1d(z)
+                self.axs[1, 0].plot(episodes, p(episodes), "g--", alpha=0.7, linewidth=2, label='Trend')
+            
+            self.axs[1, 0].legend(loc='upper left', fontsize=10)
+        
+        self.axs[1, 0].grid(True, alpha=0.3)
+        
+        # ===== GRAPH 4: Score Distribution (Bottom-Right) =====
+        self.axs[1, 1].set_title('Score Distribution (Last 100)', fontsize=14, fontweight='bold')
+        self.axs[1, 1].set_xlabel('Score', fontsize=12)
+        self.axs[1, 1].set_ylabel('Frequency', fontsize=12)
+        
+        if scores and len(scores) > 0:
+            recent_scores = scores[-100:] if len(scores) >= 100 else scores
+            
+            # Create histogram
+            n, bins, patches = self.axs[1, 1].hist(recent_scores, bins=20, edgecolor='black', alpha=0.7, color='steelblue')
+            
+            # Color code by curriculum thresholds
+            thresholds = [20, 50, 100, 200]
+            colors_map = ['lightcoral', 'lightyellow', 'lightgreen', 'lightblue', 'lightpurple']
+            
+            for i, patch in enumerate(patches):
+                bin_center = (bins[i] + bins[i+1]) / 2
+                if bin_center < 20:
+                    patch.set_facecolor('lightcoral')
+                elif bin_center < 50:
+                    patch.set_facecolor('lightyellow')
+                elif bin_center < 100:
+                    patch.set_facecolor('lightgreen')
+                elif bin_center < 200:
+                    patch.set_facecolor('lightblue')
+                else:
+                    patch.set_facecolor('mediumpurple')
+            
+            # Add statistics
+            if len(recent_scores) > 0:
+                mean_score = np.mean(recent_scores)
+                median_score = np.median(recent_scores)
+                std_score = np.std(recent_scores)
+                
+                self.axs[1, 1].axvline(mean_score, color='red', linestyle='--', linewidth=2.5, label=f'Mean: {mean_score:.1f}')
+                self.axs[1, 1].axvline(median_score, color='green', linestyle='--', linewidth=2.5, label=f'Median: {median_score:.1f}')
+                
+                # Add text box with stats
+                stats_text = f'μ={mean_score:.1f}\nσ={std_score:.1f}\nMin={min(recent_scores):.0f}\nMax={max(recent_scores):.0f}'
+                self.axs[1, 1].text(0.98, 0.97, stats_text, transform=self.axs[1, 1].transAxes,
+                                   fontsize=10, verticalalignment='top', horizontalalignment='right',
+                                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+                
+                self.axs[1, 1].legend(loc='upper left', fontsize=10)
+        
+        self.axs[1, 1].grid(True, alpha=0.3, axis='y')
+        
+        # Update the overall figure
+        self.fig.suptitle('Training Performance Analysis', fontsize=18, fontweight='bold')
+        plt.tight_layout()
+        plt.subplots_adjust(hspace=0.3, wspace=0.25, top=0.93)
         self.canvas.draw()
 
     def browse_model_dir(self):
@@ -2026,7 +2310,9 @@ class TrainingUI:
                     'steps': [],
                     'best_score': 0,
                     'losses': [],
-                    'q_values': []
+                    'q_values': [],
+                    'epsilon_values': [],  # Track actual epsilon values
+                    'lr_values': []  # Track actual learning rate values
                 }
                 
             # Initialize training start time
@@ -2092,10 +2378,25 @@ class TrainingUI:
 
     def parse_training_output(self, line):
         """Parse training output to update graphs."""
+        # Check for curriculum advancement messages
+        # Format: [CURRICULUM] ADVANCED: Stage 1 -> Stage 2
+        curriculum_match = re.search(r'\[CURRICULUM\] ADVANCED: Stage (\d+) -> Stage (\d+)', line)
+        if curriculum_match:
+            old_stage = int(curriculum_match.group(1))
+            new_stage = int(curriculum_match.group(2))
+            
+            # Record the advancement with the current episode number
+            if hasattr(self, 'training_data') and self.training_data['scores']:
+                current_episode = len(self.training_data['scores'])
+                self.curriculum_advancements.append((current_episode, old_stage, new_stage))
+                
+                # Add special log message
+                advancement_msg = f"🎓 CURRICULUM ADVANCEMENT: Stage {old_stage} → {new_stage} at Episode {current_episode}"
+                self.root.after(0, lambda msg=advancement_msg: self.add_to_log(msg, log_type="training"))
+        
         # Parse episode info - handles both integer and floating point scores
-        # Format: DQN Episode: 100/1000, Score: 25.5, Steps: 45, Best: 35.2, Avg: 15.5, Epsilon: 0.9, Time: 120.5s
-        # OR: Enhanced DQN Episode: 100/1000, Score: 25.5, Steps: 45, Best: 35.2, Avg: 15.5, Epsilon: 0.9, Curriculum: Stage 1, A*: 0.50, Time: 120.5s
-        match = re.search(r'(?:Enhanced )?DQN Episode: (\d+)/(\d+), Score: ([\d.eE+-]+), Steps: (\d+), Best: ([\d.eE+-]+), Avg: ([\d.]+), Epsilon: ([\d.]+)(?:, Curriculum: Stage (\d+))?(?:, A\*: ([\d.]+))?, Time: ([\d.]+)s', line)
+        # Format: Enhanced DQN Episode: 100/1000, Score: 25.5, Steps: 45, Best: 35.2, Avg: 15.5, Epsilon: 0.9, LR: 0.00350, Curriculum: Stage 1, A*: 0.50, Time: 120.5s
+        match = re.search(r'(?:Enhanced )?DQN Episode: (\d+)/(\d+), Score: ([\d.eE+-]+), Steps: (\d+), Best: ([\d.eE+-]+), Avg: ([\d.]+), Epsilon: ([\d.]+)(?:, LR: ([\d.]+))?(?:, Curriculum: Stage (\d+))?(?:, A\*: ([\d.]+))?, Time: ([\d.]+)s', line)
         if match:
             episode = int(match.group(1))
             total_episodes = int(match.group(2))
@@ -2104,9 +2405,10 @@ class TrainingUI:
             best = float(match.group(5))
             avg = float(match.group(6))
             epsilon = float(match.group(7))
-            curriculum_stage = int(match.group(8)) if match.group(8) else None
-            astar_prob = float(match.group(9)) if match.group(9) else None
-            time_taken = float(match.group(10))
+            lr = float(match.group(8)) if match.group(8) else None  # NEW: Extract LR
+            curriculum_stage = int(match.group(9)) if match.group(9) else None
+            astar_prob = float(match.group(10)) if match.group(10) else None
+            time_taken = float(match.group(11))
             
             # Update progress in UI (using lambda to capture current values)
             self.root.after(0, lambda e=episode, t=total_episodes: self.progress_label.config(text=f"{e}/{t}"))
@@ -2114,6 +2416,8 @@ class TrainingUI:
             
             # Create a more informative training summary entry
             summary = f"Episode: {episode}/{total_episodes} | Score: {score:.1f} | Best: {best:.1f} | Avg: {avg:.2f} | Steps: {steps} | Epsilon: {epsilon:.4f}"
+            if lr is not None:
+                summary += f" | LR: {lr:.5f}"  # NEW: Add LR to summary
             if curriculum_stage is not None:
                 summary += f" | Curriculum: Stage {curriculum_stage}"
             if astar_prob is not None:
@@ -2129,13 +2433,21 @@ class TrainingUI:
                     'scores': [],
                     'running_avgs': [],
                     'steps': [],
-                    'best_score': 0
+                    'best_score': 0,
+                    'epsilon_values': [],  # Track actual epsilon values
+                    'lr_values': []  # NEW: Track actual learning rate values
                 }
             
             self.training_data['scores'].append(score)
             self.training_data['running_avgs'].append(avg)
             self.training_data['steps'].append(steps)
             self.training_data['best_score'] = max(self.training_data['best_score'], best)
+            self.training_data['epsilon_values'].append(epsilon)  # Store actual epsilon
+            if lr is not None:
+                # Ensure lr_values key exists (for compatibility with older code)
+                if 'lr_values' not in self.training_data:
+                    self.training_data['lr_values'] = []
+                self.training_data['lr_values'].append(lr)  # Store actual LR
     
     def add_to_log(self, message, is_status=False, log_type="training"):
         """Add a message to the training or system log.

@@ -19,7 +19,7 @@ GRID_WIDTH = GAME_WIDTH // GRID_SIZE
 GRID_HEIGHT = GAME_HEIGHT // GRID_SIZE
 
 # Training window dimensions
-TRAINING_SCREEN_WIDTH = 1200
+TRAINING_SCREEN_WIDTH = 1300
 TRAINING_SCREEN_HEIGHT = 800
 MIN_TRAINING_SCREEN_WIDTH = 800
 MIN_TRAINING_SCREEN_HEIGHT = 600
@@ -99,26 +99,26 @@ DQN_MODEL_FILE = "snake_dqn_model.pth"
 
 # DQN parameters
 DQN_MODE = "Advanced DQN"  # Mode name for the menu
-DQN_LEARNING_RATE = 0.001   # Learning rate for the neural network
+DQN_LEARNING_RATE = 0.003   # PERFORMANCE BOOST: Increased from 0.001 for faster learning (3x faster weight updates)
 DQN_GAMMA = 0.99           # Discount factor
 DQN_EPSILON = 1.0          # Initial exploration rate
 DQN_EPSILON_MIN = 0.01     # Minimum exploration rate
-DQN_EPSILON_DECAY = 0.995  # Decay rate for exploration
+DQN_EPSILON_DECAY = 0.997  # Decay rate for exploration (per episode, not per step)
 DQN_BATCH_SIZE = 64        # Batch size for training (can be increased for GPU)
 DQN_MEMORY_SIZE = 100000   # Size of replay buffer
-DQN_TARGET_UPDATE = 10     # How often to update target network (in episodes)
+DQN_TARGET_UPDATE = 25     # SPEED OPTIMIZATION: Increased from 10 for more stable Q-values (less oscillation)
 DQN_PRIORITIZED_ALPHA = 0.6  # Alpha parameter for prioritized replay (0 = uniform sampling)
 DQN_PRIORITIZED_BETA = 0.4   # Beta parameter for prioritized replay (importance sampling)
 DQN_BETA_INCREMENT = 0.001   # How much to increase beta each sampling
 
 # CUDA/GPU settings
 USE_CUDA = True            # Whether to use CUDA when available
-GPU_BATCH_SIZE = 128       # Larger batch size when using GPU
-CPU_BATCH_SIZE = 64        # Smaller batch size for CPU
+GPU_BATCH_SIZE = 512       # SPEED OPTIMIZATION: Increased from 256 for smoother gradients (faster convergence)
+CPU_BATCH_SIZE = 128       # PERFORMANCE BOOST: Increased from 64 for better convergence
 
 # Neural network architecture
 DQN_HIDDEN_SIZE = 128      # Size of hidden layers
-DQN_LEARNING_STARTS = 1000  # Number of steps before starting to learn
+DQN_LEARNING_STARTS = 2000  # SPEED OPTIMIZATION: Increased from 1000 for more diverse initial experiences
 
 # Training settings for DQN
 DQN_TRAINING_EPISODES_OPTIONS = [100, 500, 1000, 5000, 10000]

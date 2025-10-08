@@ -98,6 +98,22 @@ def train_enhanced_dqn(episodes=1000, use_existing=True, save_interval=50, learn
                     with open(history_path, 'r') as f:
                         history_data = json.load(f)
                         start_episode = history_data.get('episodes_completed', 0) + 1
+                        
+                        # Restore curriculum stage and related parameters
+                        if 'curriculum_stage' in history_data:
+                            agent.curriculum_stage = history_data['curriculum_stage']
+                            print(f"[OK] Restored curriculum stage: {agent.curriculum_stage}")
+                            
+                            # Set appropriate A* guidance probability for the stage
+                            astar_probs = {0: 0.5, 1: 0.35, 2: 0.20, 3: 0.10, 4: 0.0}
+                            agent.astar_guidance_prob = astar_probs.get(agent.curriculum_stage, 0.0)
+                            print(f"[OK] Set A* guidance probability: {agent.astar_guidance_prob}")
+                        
+                        # Restore epsilon if it was saved
+                        if 'epsilon' in history_data:
+                            agent.epsilon = history_data['epsilon']
+                            print(f"[OK] Restored epsilon: {agent.epsilon:.4f}")
+                        
                         print(f"[OK] Resuming from episode {start_episode}")
                 except Exception as e:
                     print(f"[WARNING] Could not load history: {e}")
@@ -169,22 +185,6 @@ def train_enhanced_dqn(episodes=1000, use_existing=True, save_interval=50, learn
             # Train the agent
             loss = agent.optimize_model()
             
-            # Decay epsilon with curriculum-based minimum
-            # Different minimum epsilon per stage to maintain exploration
-            stage_epsilon_minimums = {
-                0: 0.20,  # Stage 0: Min 20% exploration
-                1: 0.15,  # Stage 1: Min 15% exploration
-                2: 0.10,  # Stage 2: Min 10% exploration
-                3: 0.05,  # Stage 3: Min 5% exploration
-                4: 0.01   # Stage 4: Min 1% exploration
-            }
-            stage_min = stage_epsilon_minimums.get(agent.curriculum_stage, 0.01)
-            
-            if agent.epsilon > stage_min:
-                agent.epsilon *= agent.epsilon_decay
-            else:
-                agent.epsilon = stage_min  # Enforce minimum for current stage
-            
             # Update state
             state = new_state
             old_score = game_engine.score
@@ -198,7 +198,81 @@ def train_enhanced_dqn(episodes=1000, use_existing=True, save_interval=50, learn
         # Episode finished
         score = game_engine.score
         scores.append(score)
-        agent.update_curriculum(score)  # Update curriculum stage
+        agent.update_curriculum(score, current_episode=episode)  # Update curriculum stage (pass episode for cooldown tracking)
+        
+        # ============================================================
+        # PROGRESSIVE EPSILON DECAY (per episode)
+        # ============================================================
+        # Decay epsilon ONCE per episode with curriculum-based minimum
+        # Different minimum epsilon per stage to maintain exploration
+        stage_epsilon_minimums = {
+            0: 0.1,  # Stage 0: Min 10% exploration
+            1: 0.05,  # Stage 1: Min 5% exploration
+            2: 0.04,  # Stage 2: Min 4% exploration
+            3: 0.02,  # Stage 3: Min 2% exploration
+            4: 0.01   # Stage 4: Min 1% exploration
+        }
+        stage_epsilon_min = stage_epsilon_minimums.get(agent.curriculum_stage, 0.01)
+        
+        # PERFORMANCE FIX: Force epsilon back up if it dropped too low
+        # This can happen if epsilon was saved at a low value or decay was too aggressive
+        if agent.epsilon < stage_epsilon_min:
+            print(f"[EPSILON FIX] Epsilon {agent.epsilon:.4f} below minimum {stage_epsilon_min:.4f}, correcting...")
+            agent.epsilon = stage_epsilon_min
+        
+        # PERFORMANCE BOOST: Curriculum-adaptive epsilon decay
+        # Faster decay at early stages for quicker exploitation
+        stage_epsilon_decay = {
+            0: 0.9965,  # SPEED OPTIMIZATION: Slower decay (half-life ~200 episodes, was ~100) for more exploration
+            1: 0.995,  # Medium decay
+            2: 0.996,  # Standard decay
+            3: 0.997,  # Conservative decay
+            4: 0.997
+        }
+        epsilon_decay_rate = stage_epsilon_decay.get(agent.curriculum_stage, 0.997)
+        
+        if agent.epsilon > stage_epsilon_min:
+            agent.epsilon *= epsilon_decay_rate
+        else:
+            agent.epsilon = stage_epsilon_min  # Enforce minimum for current stage
+        
+        # ============================================================
+        # PROGRESSIVE LEARNING RATE DECAY (per episode) - NEW!
+        # ============================================================
+        # Apply same decay strategy to learning rate for stability
+        stage_lr_minimums = {
+            0: 0.002,   # Stage 0: Decay from 0.005 down to 0.002
+            1: 0.0015,  # Stage 1: Decay from 0.003 down to 0.0015
+            2: 0.001,   # Stage 2: Decay from 0.002 down to 0.001
+            3: 0.0005,  # Stage 3: Decay from 0.001 down to 0.0005
+            4: 0.0002   # Stage 4: Decay from 0.0005 down to 0.0002
+        }
+        stage_lr_min = stage_lr_minimums.get(agent.curriculum_stage, 0.0002)
+        
+        # Decay rate slightly slower than epsilon (want to keep learning longer)
+        stage_lr_decay = {
+            0: 0.9990,  # SPEED OPTIMIZATION: Slower decay (was 0.9985) to maintain strong learning longer
+            1: 0.9993,  # SPEED OPTIMIZATION: Slower decay (was 0.9990)
+            2: 0.9995,  # Changed from 0.9992
+            3: 0.9997,  # Changed from 0.9995
+            4: 0.9998   # Changed from 0.9997 (very slow fine-tuning)
+        }
+        lr_decay_rate = stage_lr_decay.get(agent.curriculum_stage, 0.9995)
+        
+        # Get current learning rate from optimizer
+        current_lr = agent.optimizer.param_groups[0]['lr']
+        
+        if current_lr > stage_lr_min:
+            new_lr = current_lr * lr_decay_rate
+            # Update optimizer learning rate
+            for param_group in agent.optimizer.param_groups:
+                param_group['lr'] = new_lr
+            agent.learning_rate = new_lr
+        else:
+            # Enforce minimum
+            for param_group in agent.optimizer.param_groups:
+                param_group['lr'] = stage_lr_min
+            agent.learning_rate = stage_lr_min
         
         # Calculate running average
         window = min(100, len(scores))
@@ -212,11 +286,11 @@ def train_enhanced_dqn(episodes=1000, use_existing=True, save_interval=50, learn
         # Calculate episode time
         episode_time = time.time() - episode_start
         
-        # Print progress with A* guidance info
+        # Print progress with A* guidance info + learning rate
         print(f"Enhanced DQN Episode: {episode}/{total_episodes}, "
               f"Score: {score:.1f}, Steps: {steps}, "
               f"Best: {best_score:.1f}, Avg: {running_avg:.2f}, "
-              f"Epsilon: {agent.epsilon:.4f}, "
+              f"Epsilon: {agent.epsilon:.4f}, LR: {agent.learning_rate:.5f}, "
               f"Curriculum: Stage {agent.curriculum_stage}, "
               f"A*: {agent.astar_guidance_prob:.2f}, "
               f"Time: {episode_time:.2f}s", flush=True)
@@ -241,6 +315,8 @@ def train_enhanced_dqn(episodes=1000, use_existing=True, save_interval=50, learn
                     'timestamp': time.time(),
                     'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     'curriculum_stage': agent.curriculum_stage,
+                    'epsilon': agent.epsilon,  # Save current epsilon for resumption
+                    'astar_guidance_prob': agent.astar_guidance_prob,  # Save A* guidance probability
                     'state_features': 34,
                     'model_type': 'Enhanced DQN with A* Reward Shaping'
                 }

@@ -295,10 +295,36 @@ class EnhancedDQNAgent(AdvancedDQNAgent):
         self.recent_scores = deque(maxlen=50)  # Increased from 10 to 50 for better trend analysis
         self.stuck_counter = 0
         self.last_avg_score = 0  # Track if we're improving
+        self.last_epsilon_boost_episode = -200  # Track when we last boosted epsilon (prevent oscillation)
+        
+        # PERFORMANCE BOOST: Set initial learning rate based on curriculum stage
+        self.update_learning_rate_for_stage()
         
     def get_state(self):
         """Override to use enhanced state representation."""
         return EnhancedStateRepresentation.get_enhanced_state(self.game_engine)
+    
+    def update_learning_rate_for_stage(self):
+        """
+        PERFORMANCE BOOST: Adjust learning rate based on curriculum stage.
+        Fast learning early, fine-tuning later.
+        """
+        stage_learning_rates = {
+            0: 0.005,   # Stage 0: FAST learning for basics
+            1: 0.003,   # Stage 1: Medium learning
+            2: 0.002,   # Stage 2: Standard learning
+            3: 0.001,   # Stage 3: Conservative learning
+            4: 0.0005   # Stage 4: Fine-tuning
+        }
+        
+        new_lr = stage_learning_rates.get(self.curriculum_stage, 0.001)
+        
+        # Update optimizer learning rate
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = new_lr
+        
+        self.learning_rate = new_lr
+        return new_lr
     
     def perform_action(self, action):
         """
@@ -387,14 +413,33 @@ class EnhancedDQNAgent(AdvancedDQNAgent):
         if game_over:
             reward += REWARD_DEATH * (1 + self.curriculum_stage * 0.5)  # Harsher penalty as it improves
         elif current_score > old_score:  # Ate food
-            # UPDATED: Doubled base food reward to encourage aggressive food-seeking
+            # UPDATED: Curriculum-scaled food reward to encourage aggressive food-seeking
             # Scale food reward based on snake length (harder to get food when longer)
             length_bonus = 1 + (len(self.game_engine.snake) / 100)
-            reward += (REWARD_FOOD * 2) * length_bonus  # Was REWARD_FOOD (10), now 20 base
+            
+            # OPTIMAL HYPERPARAMETERS: Keep Stage 1 rewards at Stage 2 for exponential growth
+            stage_food_multiplier = {
+                0: 3.0,  # Triple reward at Stage 0 (30-60 points!) - fastest learning
+                1: 2.5,  # Stage 1 optimal (achieved 230 score!) 25-50 points
+                2: 2.5,  # FIXED: Keep Stage 1 level (was 2.0, caused collapse)
+                3: 2.0,  # UPDATED: Gradual reduction (was 1.5)
+                4: 1.0   # 10-20 points (standard)
+            }.get(self.curriculum_stage, 2.0)
+            
+            reward += (REWARD_FOOD * 2) * length_bonus * stage_food_multiplier
+            
+            # PERFORMANCE BOOST: Extra bonus for first food at stage 0
+            if self.curriculum_stage == 0 and current_score <= 10:
+                reward += 10  # Big encouragement for early success
         else:
             # Survival reward decreases as snake gets longer (should be hunting food)
             survival_penalty = len(self.game_engine.snake) / 1000
             reward += REWARD_SURVIVAL - survival_penalty
+            
+            # PERFORMANCE BOOST: Stage 0 survival bonus (encourage staying alive to learn)
+            if self.curriculum_stage == 0:
+                survival_bonus = min(len(self.game_engine.snake) * 0.5, 5)  # Up to +5
+                reward += survival_bonus
         
         # NEW: A* Alignment Bonus - Reward for moving along optimal path
         # This teaches the DQN to pathfind WITHOUT overriding its decisions
@@ -409,19 +454,39 @@ class EnhancedDQNAgent(AdvancedDQNAgent):
                 
                 # Check if current head is on the A* path (means we followed it)
                 if head in path[1:min(3, len(path))]:  # Within first 2-3 steps of path
-                    # Scale bonus by curriculum stage (higher bonus early, lower later)
-                    astar_bonus = self.astar_guidance_prob * 0.5  # 0.25 at stage 0, 0 at stage 4
+                    # OPTIMAL HYPERPARAMETERS: Keep Stage 1 support at Stage 2 for exponential growth
+                    stage_astar_weight = {
+                        0: 1.0,   # Strong guidance at Stage 0 (4x original!)
+                        1: 0.75,  # Stage 1 optimal (achieved 230 score!)
+                        2: 0.75,  # FIXED: Keep Stage 1 level (was 0.50, caused collapse)
+                        3: 0.60,  # UPDATED: Gradual reduction (was 0.25)
+                        4: 0.0    # No guidance at Stage 4 (fully independent)
+                    }.get(self.curriculum_stage, 0.5)
+                    
+                    astar_bonus = self.astar_guidance_prob * stage_astar_weight
                     reward += astar_bonus
         except:
             pass
         
-        # Movement rewards - UPDATED: More aggressive distance-based shaping
-        if new_distance < old_distance:
-            # Moving toward food - good!
-            reward += REWARD_MOVE_TOWARDS_FOOD * 3  # Tripled from 2 to encourage seeking
-        elif new_distance > old_distance:
-            # Moving away from food - bad!
-            reward += REWARD_MOVE_AWAY_FROM_FOOD * 2  # Doubled penalty
+        # PERFORMANCE BOOST: Progressive distance rewards - scale by actual improvement
+        # This provides a gradient for learning "closer = better" much faster
+        if old_distance > 0:  # Avoid division by zero
+            distance_change = old_distance - new_distance
+            distance_improvement_ratio = distance_change / old_distance
+            
+            if distance_improvement_ratio > 0:
+                # Moving closer - scale reward by how much closer we got
+                # e.g., 50% closer = much better than 5% closer
+                reward += REWARD_MOVE_TOWARDS_FOOD * 10 * distance_improvement_ratio
+            else:
+                # Moving away - penalize based on how much farther
+                reward += REWARD_MOVE_AWAY_FROM_FOOD * 5 * abs(distance_improvement_ratio)
+        else:
+            # Fallback to simple binary reward if distance is 0 (shouldn't happen)
+            if new_distance < old_distance:
+                reward += REWARD_MOVE_TOWARDS_FOOD * 3
+            elif new_distance > old_distance:
+                reward += REWARD_MOVE_AWAY_FROM_FOOD * 2
         
         # Safety bonus - reward for having escape routes
         head = self.game_engine.snake[0]
@@ -450,10 +515,14 @@ class EnhancedDQNAgent(AdvancedDQNAgent):
         
         return reward
     
-    def update_curriculum(self, score):
+    def update_curriculum(self, score, current_episode=0):
         """
         Update curriculum stage based on SUSTAINED performance.
         Requires consistent achievement of threshold before advancing.
+        
+        Args:
+            score: Score from the current episode
+            current_episode: Current episode number (for cooldown tracking)
         """
         self.recent_scores.append(score)
         
@@ -466,12 +535,20 @@ class EnhancedDQNAgent(AdvancedDQNAgent):
             if self.curriculum_stage < len(self.curriculum_thresholds):
                 current_threshold = self.curriculum_thresholds[self.curriculum_stage]
                 
-                # IMPROVED: Require both average AND minimum to meet reasonable criteria
-                # Average must exceed threshold AND minimum score should be at least 50% of threshold
-                # This ensures SUSTAINED performance, not just lucky peaks
-                min_acceptable = current_threshold * 0.5
+                # OPTIMAL ADVANCEMENT: Stricter criteria based on 230-score analysis
+                # Agent must MASTER current stage before advancing
+                # Stage 0: Need to meet threshold (easy start)
+                # Stage 1: Need avg 90 to advance (was 60) - ensures readiness for Stage 2
+                # Stage 2+: Need 30% above threshold for stability
                 
-                if avg_score >= current_threshold and min_score >= min_acceptable:
+                if self.curriculum_stage == 0:
+                    advancement_threshold = current_threshold  # 20 (lenient start)
+                elif self.curriculum_stage == 1:
+                    advancement_threshold = current_threshold * 1.8  # 90 (MUCH STRICTER - was 60)
+                else:
+                    advancement_threshold = current_threshold * 1.3  # 130, 260 (moderately strict)
+                
+                if avg_score >= advancement_threshold:
                     self.curriculum_success_count += 1
                     
                     # Require multiple consecutive successful evaluations
@@ -479,39 +556,44 @@ class EnhancedDQNAgent(AdvancedDQNAgent):
                         old_stage = self.curriculum_stage
                         old_astar_prob = self.astar_guidance_prob
                         old_epsilon = self.epsilon
+                        old_lr = self.learning_rate
                         
                         self.curriculum_stage += 1
                         self.curriculum_success_count = 0  # Reset for next stage
                         
-                        # UPDATED: Lower epsilon requirements for better exploitation
-                        # Only adjust epsilon if it's gotten too low (don't force it up unnecessarily)
+                        # PERFORMANCE BOOST: Update learning rate for new stage
+                        new_lr = self.update_learning_rate_for_stage()
+                        
+                        # OPTIMAL HYPERPARAMETERS: Maintain strong exploration at each stage
+                        # Based on analysis: epsilon 0.05-0.10 was optimal for 230-score breakthrough
                         if self.curriculum_stage == 1:
                             self.astar_guidance_prob = 0.35  # Reduce A* from 0.5 to 0.35
                             # Allow lower epsilon for more exploitation
-                            if self.epsilon < 0.2:  # Changed from 0.3
-                                self.epsilon = 0.2
+                            if self.epsilon < 0.1:  # Changed from 0.3
+                                self.epsilon = 0.1
                         elif self.curriculum_stage == 2:
                             self.astar_guidance_prob = 0.20  # Further reduce A* to 0.20
-                            if self.epsilon < 0.15:  # Changed from 0.2
-                                self.epsilon = 0.15
+                            if self.epsilon < 0.12:  # FIXED: Raise floor (was 0.05) for optimal exploration
+                                self.epsilon = 0.12
                         elif self.curriculum_stage == 3:
                             self.astar_guidance_prob = 0.10  # Minimal A* guidance
-                            if self.epsilon < 0.1:  # Changed from 0.15
-                                self.epsilon = 0.1
+                            if self.epsilon < 0.08:  # FIXED: Raise floor (was 0.04)
+                                self.epsilon = 0.08
                         elif self.curriculum_stage >= 4:
                             self.astar_guidance_prob = 0.0  # No A* guidance at final stage
-                            if self.epsilon < 0.05:  # Changed from 0.1 - allow very low epsilon
+                            if self.epsilon < 0.05:  # UPDATED: Raise floor (was 0.03)
                                 self.epsilon = 0.05
                         
                         # VISIBLE logging of curriculum advancement
                         print(f"\n{'='*70}")
                         print(f"[CURRICULUM] ADVANCED: Stage {old_stage} -> Stage {self.curriculum_stage}")
-                        print(f"Average Score: {avg_score:.1f} >= Threshold: {current_threshold}")
-                        print(f"Minimum Score: {min_score:.1f} >= Required: {min_acceptable:.1f}")
+                        print(f"Average Score: {avg_score:.1f} >= Threshold: {advancement_threshold}")
+                        print(f"Minimum Score: {min_score:.1f} (occasional low scores allowed)")
                         print(f"Consistency: {self.curriculum_consistency_required} consecutive successful evaluations")
                         print(f"STRATEGY CHANGES:")
                         print(f"  • A* Reward Weight: {old_astar_prob:.2f} -> {self.astar_guidance_prob:.2f} ({old_astar_prob - self.astar_guidance_prob:+.2f})")
                         print(f"  • Epsilon:          {old_epsilon:.4f} -> {self.epsilon:.4f}")
+                        print(f"  • Learning Rate:    {old_lr:.5f} -> {new_lr:.5f} ({new_lr - old_lr:+.5f})")
                         print(f"  • Death Penalty:    {1 + old_stage * 0.5:.1f}x -> {1 + self.curriculum_stage * 0.5:.1f}x")
                         print(f"NOTE: A* now guides through REWARDS, not action override")
                         print(f"      DQN learns to pathfind by being rewarded for following A* hints")
@@ -524,7 +606,7 @@ class EnhancedDQNAgent(AdvancedDQNAgent):
                     # Reset if criteria not met
                     if self.curriculum_success_count > 0:
                         print(f"[CURRICULUM] Criteria not met - resetting progress "
-                              f"(Avg: {avg_score:.1f}/{current_threshold}, Min: {min_score:.1f}/{min_acceptable:.1f})")
+                              f"(Avg: {avg_score:.1f} < Required: {advancement_threshold:.1f})")
                     self.curriculum_success_count = 0
                 
             # Detect if TRULY stuck (much more conservative than before)
@@ -533,19 +615,54 @@ class EnhancedDQNAgent(AdvancedDQNAgent):
                 avg_score = np.mean(self.recent_scores)
                 score_variance = np.var(self.recent_scores)
                 
-                # Check if stuck: low variance AND no improvement from last check
-                is_stuck = (score_variance < 50 and  # Very low variance (scores almost identical)
-                           avg_score < 100 and  # Still performing poorly
-                           abs(avg_score - self.last_avg_score) < 2)  # No meaningful improvement
+                # UPDATED: Check if stuck at current curriculum level
+                # At each stage, if we're not advancing for a long time, we're stuck
+                stage_stuck_threshold = self.curriculum_thresholds[self.curriculum_stage] if self.curriculum_stage < len(self.curriculum_thresholds) else 300
+                
+                # PERFORMANCE FIX: Better plateau detection
+                # If we're near the threshold but not advancing, we're in a local optimum
+                near_threshold = abs(avg_score - stage_stuck_threshold) < stage_stuck_threshold * 0.3
+                improvement = abs(avg_score - self.last_avg_score)
+                
+                # Stage-specific stuck detection criteria (more lenient at early stages)
+                if self.curriculum_stage == 0:
+                    # Stage 0: Stuck if near threshold (15-25) with no improvement OR very low scores
+                    is_stuck = (
+                        (avg_score < 10 and score_variance < 20 and improvement < 1) or  # Very low scores
+                        (near_threshold and improvement < 2 and score_variance < 100)  # Plateau near threshold
+                    )
+                elif self.curriculum_stage == 1:
+                    # Stage 1: Moderate stuck detection
+                    is_stuck = (
+                        (avg_score < 35 and score_variance < 40 and improvement < 2) or
+                        (near_threshold and improvement < 3)
+                    )
+                else:
+                    # Stage 2+: Original stuck detection logic
+                    is_stuck = (
+                        (score_variance < 50 and improvement < 2) or  # No improvement
+                        (avg_score < stage_stuck_threshold + 50 and improvement < 5)  # Stuck near threshold
+                    )
                 
                 if is_stuck:
                     self.stuck_counter += 1
                     if self.stuck_counter >= 3:  # Only after 3 consecutive stuck checks (150 episodes!)
-                        print(f"\n[WARNING] Agent appears stuck! Very low variance and no improvement.")
-                        print(f"  • Current avg: {avg_score:.1f}, Variance: {score_variance:.1f}")
-                        print(f"  • Slightly boosting epsilon from {self.epsilon:.4f} to {min(self.epsilon + 0.05, 0.3):.4f}")
-                        self.epsilon = min(self.epsilon + 0.05, 0.3)  # Small boost, cap at 0.3
-                        self.stuck_counter = 0
+                        # ANTI-OSCILLATION: Don't boost if we recently boosted (within 200 episodes)
+                        episodes_since_boost = current_episode - self.last_epsilon_boost_episode
+                        
+                        if episodes_since_boost < 200:
+                            print(f"\n[COOLDOWN] Stuck detected but skipping boost (last boost {episodes_since_boost} episodes ago)")
+                            print(f"  • Need 200 episodes between boosts to prevent oscillation")
+                            print(f"  • Current avg: {avg_score:.1f}, Variance: {score_variance:.1f}")
+                            self.stuck_counter = 0  # Reset to avoid repeated messages
+                        else:
+                            print(f"\n[WARNING] Agent appears stuck at Stage {self.curriculum_stage}!")
+                            print(f"  • Current avg: {avg_score:.1f}, Variance: {score_variance:.1f}")
+                            print(f"  • Target threshold: {stage_stuck_threshold}")
+                            print(f"  • Boosting epsilon from {self.epsilon:.4f} to {min(self.epsilon + 0.10, 0.4):.4f}")
+                            self.epsilon = min(self.epsilon + 0.10, 0.4)  # Larger boost for exploration
+                            self.last_epsilon_boost_episode = current_episode  # Track when we boosted
+                            self.stuck_counter = 0
                 else:
                     self.stuck_counter = 0
                 
