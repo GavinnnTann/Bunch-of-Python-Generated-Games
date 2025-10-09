@@ -1,0 +1,13 @@
+{
+  "td_errors": [],
+  "losses": [],
+  "q_values": [],
+  "q_target_values": [],
+  "grad_norms_pre": [],
+  "grad_norms_post": [],
+  "target_lag": [],
+  "epsilon_history": [],
+  "buffer_size": [],
+  "eval_scores": [],
+  "eval_episodes": []
+}

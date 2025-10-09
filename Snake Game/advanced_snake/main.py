@@ -15,10 +15,9 @@ from constants import *
 from game_engine import GameEngine
 from algorithms import SnakeAlgorithms
 from q_learning import SnakeQLearningAgent
-from training import SnakeTrainer
 from advanced_dqn import AdvancedDQNAgent
 from enhanced_dqn import EnhancedDQNAgent  # Import Enhanced DQN
-from dqn_training import DQNTrainer
+from stable_dqn import StableDQNAgent  # Import Stable DQN
 
 class SnakeGame:
     def __init__(self):
@@ -58,10 +57,6 @@ class SnakeGame:
         if self.available_dqn_models:
             self.load_dqn_model(0)  # Load first model
         
-        # Initialize trainers
-        self.trainer = SnakeTrainer()
-        self.dqn_trainer = DQNTrainer()
-        
         # Game variables
         self.running = True
         self.game_state = STATE_MENU
@@ -76,8 +71,7 @@ class SnakeGame:
         
         # Menu variables
         self.menu_options = ["Mode: " + MANUAL_MODE, "Speed: " + DEFAULT_SPEED, 
-                             "DQN Model: Browse", "Start Game", 
-                             "Train Q-Learning Model", "Train Advanced DQN Model"]
+                             "DQN Model: Browse", "Start Game"]
         self.selected_option = 0
         
         # Mode selection variables
@@ -103,7 +97,10 @@ class SnakeGame:
             filename = os.path.basename(model_path)
             
             # Determine model type
-            if "enhanced" in filename.lower():
+            if "stable" in filename.lower():
+                model_type = "Stable"
+                agent_class = StableDQNAgent
+            elif "enhanced" in filename.lower():
                 model_type = "Enhanced"
                 agent_class = EnhancedDQNAgent
             else:
@@ -236,45 +233,6 @@ class SnakeGame:
                 self.cycle_dqn_model()
             elif self.selected_option == 3:  # Start game
                 self.start_game()
-            elif self.selected_option == 4:  # Train Q-Learning Model
-                # Open training interface
-                self.trainer.run_training_menu()
-                
-                # After training, check if model exists and reload it
-                model_path = os.path.join(QMODEL_DIR, QMODEL_FILE)
-                if os.path.exists(model_path):
-                    # Initialize Q-learning agent if it doesn't exist
-                    if self.q_agent is None:
-                        self.q_agent = SnakeQLearningAgent(self.game_engine)
-                        
-                    # Load model
-                    self.q_agent.load_model(model_path)
-                    print(f"Loaded Q-learning model from {model_path}")
-                    
-                # Update available game modes
-                self.update_available_modes()
-            elif self.selected_option == 5:  # Train Advanced DQN Model
-                # Open DQN training interface
-                self.dqn_trainer.run_training_menu()
-                
-                # After training, check if model exists and reload it once
-                model_path = os.path.join(QMODEL_DIR, DQN_MODEL_FILE)
-                if os.path.exists(model_path):
-                    try:
-                        # Initialize DQN agent if it doesn't exist
-                        if self.dqn_agent is None:
-                            self.dqn_agent = AdvancedDQNAgent(self.game_engine)
-                            # Load model only once
-                            if self.dqn_agent.load_model(model_path, silent=True):
-                                print(f"Loaded DQN model from {model_path}")
-                            else:
-                                print(f"Failed to load DQN model from {model_path}")
-                    except RuntimeError as e:
-                        print(f"Error loading DQN model: {e}")
-                        self.dqn_agent = None
-                    
-                # Update available game modes
-                self.update_available_modes()
     
     def handle_game_input(self, key):
         """Handle input in the playing state."""

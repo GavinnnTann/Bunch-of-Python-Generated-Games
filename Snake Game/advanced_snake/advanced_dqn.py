@@ -434,6 +434,9 @@ class AdvancedDQNAgent:
         else:
             # Exploitation: select the action with the highest Q-value
             with torch.no_grad():
+                # Add batch dimension if not present (for single state inference)
+                if state.dim() == 1:
+                    state = state.unsqueeze(0)
                 q_values = self.policy_net(state)
                 self.stats['q_values'].append(float(q_values.max().item()))
                 return q_values.argmax().item()

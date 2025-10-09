@@ -180,9 +180,10 @@ class TrainingUI:
         arch_combo = ttk.Combobox(
             control_frame,
             textvariable=self.arch_model_type,
-            values=["Original DQN (11 features)", "Enhanced DQN (34 features)"],
+            values=["Q-Learning (Tabular)", "Original DQN (11 features)", 
+                   "Enhanced DQN (34 features)", "Stable DQN (34 features)"],
             state="readonly",
-            width=30
+            width=35
         )
         arch_combo.pack(side=tk.LEFT, padx=5)
         
@@ -210,9 +211,27 @@ class TrainingUI:
         self.arch_ax.axis('off')
         
         model_type = self.arch_model_type.get()
+        is_qlearning = "Q-Learning" in model_type
         is_enhanced = "Enhanced" in model_type
+        is_stable = "Stable" in model_type
         
-        if is_enhanced:
+        if is_qlearning:
+            # Q-Learning tabular approach - visualize differently
+            self.draw_qlearning_diagram()
+            return
+        
+        if is_stable:
+            # Stable DQN architecture: 34 -> 128 -> 128 -> Dueling Heads
+            layers = [
+                ("Input", 34, "Normalized"),
+                ("Hidden 1", 128, "ReLU"),
+                ("Hidden 2", 128, "ReLU"),
+                ("Value", 64, "V(s)"),
+                ("Advantage", 64, "A(s,a)"),
+                ("Output", 3, "Q-Values")
+            ]
+            title = "Stable DQN Architecture (34 features)\nPER, Double DQN, Soft Target Updates, Input Normalization"
+        elif is_enhanced:
             # Enhanced DQN architecture: 34 -> 256 -> 128 -> 4 (with dueling)
             layers = [
                 ("Input", 34, "State Features"),
@@ -309,6 +328,85 @@ class TrainingUI:
                         ha='center', va='bottom', fontsize=10,
                         transform=self.arch_ax.transAxes, style='italic',
                         bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        # Set limits
+        self.arch_ax.set_xlim(0, 1)
+        self.arch_ax.set_ylim(0, 1)
+        
+        self.arch_canvas.draw()
+    
+    def draw_qlearning_diagram(self):
+        """Draw Q-Learning tabular approach diagram."""
+        # Title
+        title = "Q-Learning Architecture (Tabular Method)\nDirect State-Action Value Table"
+        self.arch_ax.text(0.5, 0.95, title,
+                        ha='center', va='top', fontsize=14, fontweight='bold',
+                        transform=self.arch_ax.transAxes)
+        
+        # State representation box
+        state_box = plt.Rectangle((0.05, 0.6), 0.25, 0.25,
+                                  facecolor='#3498db', edgecolor='black', linewidth=2, alpha=0.7)
+        self.arch_ax.add_patch(state_box)
+        self.arch_ax.text(0.175, 0.725, "STATE\n(Tuple)", ha='center', va='center',
+                         fontsize=12, fontweight='bold', color='white')
+        self.arch_ax.text(0.175, 0.57, "11 binary features", ha='center', va='top',
+                         fontsize=9, style='italic')
+        
+        # Q-Table box (main component)
+        qtable_box = plt.Rectangle((0.37, 0.4), 0.26, 0.45,
+                                   facecolor='#2ecc71', edgecolor='black', linewidth=3, alpha=0.7)
+        self.arch_ax.add_patch(qtable_box)
+        self.arch_ax.text(0.5, 0.75, "Q-TABLE", ha='center', va='center',
+                         fontsize=14, fontweight='bold', color='white')
+        self.arch_ax.text(0.5, 0.68, "Dictionary:\nState → Actions", ha='center', va='center',
+                         fontsize=10, color='white')
+        
+        # Show sample Q-table entry
+        sample_text = "Example:\nState(1,0,1,...) →\n{UP: 2.5, DOWN: -1.0,\n LEFT: 0.8, RIGHT: 3.2}"
+        self.arch_ax.text(0.5, 0.5, sample_text, ha='center', va='center',
+                         fontsize=8, family='monospace',
+                         bbox=dict(boxstyle='round', facecolor='white', alpha=0.9))
+        
+        # Action selection box
+        action_box = plt.Rectangle((0.70, 0.6), 0.25, 0.25,
+                                   facecolor='#e74c3c', edgecolor='black', linewidth=2, alpha=0.7)
+        self.arch_ax.add_patch(action_box)
+        self.arch_ax.text(0.825, 0.725, "ACTION\n(Absolute)", ha='center', va='center',
+                         fontsize=12, fontweight='bold', color='white')
+        self.arch_ax.text(0.825, 0.57, "UP/DOWN/LEFT/RIGHT", ha='center', va='top',
+                         fontsize=9, style='italic')
+        
+        # Arrows
+        # State -> Q-Table
+        self.arch_ax.annotate('', xy=(0.37, 0.725), xytext=(0.30, 0.725),
+                             arrowprops=dict(arrowstyle='->', lw=2, color='black'))
+        self.arch_ax.text(0.335, 0.75, 'Lookup', ha='center', fontsize=9)
+        
+        # Q-Table -> Action
+        self.arch_ax.annotate('', xy=(0.70, 0.725), xytext=(0.63, 0.725),
+                             arrowprops=dict(arrowstyle='->', lw=2, color='black'))
+        self.arch_ax.text(0.665, 0.75, 'Max Q', ha='center', fontsize=9)
+        
+        # Update rule box
+        update_box = plt.Rectangle((0.15, 0.15), 0.70, 0.18,
+                                   facecolor='#f39c12', edgecolor='black', linewidth=2, alpha=0.7)
+        self.arch_ax.add_patch(update_box)
+        self.arch_ax.text(0.5, 0.29, "Q-Learning Update Rule", ha='center', va='top',
+                         fontsize=11, fontweight='bold')
+        
+        update_formula = r"$Q(s,a) \leftarrow Q(s,a) + \alpha [r + \gamma \max_{a'} Q(s',a') - Q(s,a)]$"
+        self.arch_ax.text(0.5, 0.21, update_formula, ha='center', va='center',
+                         fontsize=12, family='serif')
+        
+        # Advantages box
+        adv_text = ("✓ Perfect memory of visited states\n"
+                   "✓ No neural network complexity\n"
+                   "✓ Fast training (~1000 episodes)\n"
+                   "✓ Deterministic action selection\n"
+                   "✓ Easy to interpret and debug")
+        self.arch_ax.text(0.05, 0.05, adv_text, ha='left', va='bottom',
+                         fontsize=9, family='monospace',
+                         bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.7))
         
         # Set limits
         self.arch_ax.set_xlim(0, 1)
@@ -1046,8 +1144,9 @@ class TrainingUI:
         self.model_type_combo = ttk.Combobox(
             model_type_frame,
             textvariable=self.model_type_var,
-            values=["Original DQN (11 features)", "Enhanced DQN (34 features)"],
-            width=25,
+            values=["Q-Learning (Tabular)", "Original DQN (11 features)", 
+                   "Enhanced DQN (34 features)", "Stable DQN (34 features)"],
+            width=30,
             state="readonly"
         )
         self.model_type_combo.pack(side=tk.RIGHT)
@@ -1856,8 +1955,13 @@ class TrainingUI:
             messagebox.showerror("Error", f"Directory not found: {dir_path}")
             return
         
-        # Find all .pth files in the directory
+        # Find all .pth files (DQN models) in the directory
         model_files = glob.glob(os.path.join(dir_path, "*.pth"))
+        
+        # Also find Q-Learning model (.pkl file)
+        qlearning_file = os.path.join(dir_path, QMODEL_FILE)
+        if os.path.exists(qlearning_file):
+            model_files.append(qlearning_file)
         
         for model_path in model_files:
             filename = os.path.basename(model_path)
@@ -1881,7 +1985,8 @@ class TrainingUI:
                 "path": model_path,
                 "episodes": episodes,
                 "best_score": best_score,
-                "last_updated": last_updated
+                "last_updated": last_updated,
+                "is_qlearning": filename.endswith('.pkl')
             })
             
             # Add to treeview
@@ -1921,14 +2026,25 @@ class TrainingUI:
         
         # Try multiple possible history files
         base_model_name = os.path.splitext(model_filename)[0]
-        possible_history_paths = [
-            # Specific history file for this model
-            os.path.join(os.path.dirname(model_info["path"]), f"{base_model_name}_history.json"),
-            # Generic history file in the same directory
-            os.path.join(os.path.dirname(model_info["path"]), "snake_dqn_model_history.json"),
-            # Interrupted training file
-            os.path.join(os.path.dirname(model_info["path"]), f"{base_model_name}_interrupted_history.json"),
-        ]
+        
+        # Check if this is a Q-Learning model
+        is_qlearning = model_info.get('is_qlearning', False)
+        
+        if is_qlearning:
+            # Q-Learning specific history file
+            possible_history_paths = [
+                os.path.join(os.path.dirname(model_info["path"]), "qlearning_training_stats.json"),
+            ]
+        else:
+            # DQN history files
+            possible_history_paths = [
+                # Specific history file for this model
+                os.path.join(os.path.dirname(model_info["path"]), f"{base_model_name}_history.json"),
+                # Generic history file in the same directory
+                os.path.join(os.path.dirname(model_info["path"]), "snake_dqn_model_history.json"),
+                # Interrupted training file
+                os.path.join(os.path.dirname(model_info["path"]), f"{base_model_name}_interrupted_history.json"),
+            ]
         
         scores = []
         running_avgs = []
@@ -1942,21 +2058,33 @@ class TrainingUI:
                 try:
                     with open(history_path, 'r') as f:
                         history = json.load(f)
-                        scores = history.get("scores", [])
-                        running_avgs = history.get("running_avgs", [])
-                        losses = history.get("losses", [])
-                        q_values = history.get("q_values", [])
+                        
+                        if is_qlearning:
+                            # Q-Learning uses different field names
+                            scores = history.get("scores", [])
+                            running_avgs = history.get("running_avg", [])  # Note: different key
+                            # Q-Learning doesn't have losses/q_values in the same format
+                            losses = []
+                            q_values = []
+                        else:
+                            # DQN format
+                            scores = history.get("scores", [])
+                            running_avgs = history.get("running_avgs", [])
+                            losses = history.get("losses", [])
+                            q_values = history.get("q_values", [])
                         
                         # Update best score from history if available
-                        if "best_score" in history and history["best_score"] != "Unknown":
-                            self.score_label.config(text=str(history["best_score"]))
+                        if scores:
+                            best_from_history = max(scores)
+                            self.score_label.config(text=str(int(best_from_history)))
                         
                         # Update episodes from history if available  
-                        if "episodes_completed" in history:
-                            self.progress_label.config(text=str(history["episodes_completed"]))
+                        if scores:
+                            self.progress_label.config(text=str(len(scores)))
                     
                     # Log the successful loading
-                    self.add_to_log(f"Loaded training history from {os.path.basename(history_path)}", log_type="system")
+                    model_type = "Q-Learning" if is_qlearning else "DQN"
+                    self.add_to_log(f"Loaded {model_type} training history from {os.path.basename(history_path)}", log_type="system")
                     history_found = True
                     break
                 except Exception as e:
@@ -2053,7 +2181,17 @@ class TrainingUI:
         """Handle model type selection change."""
         model_type = self.model_type_var.get()
         
-        if "Enhanced" in model_type:
+        if "Q-Learning" in model_type:
+            self.model_info_label.config(
+                text="📚 Q-Learning: Tabular method, absolute actions, perfect memory",
+                foreground="purple"
+            )
+        elif "Stable" in model_type:
+            self.model_info_label.config(
+                text="🎯 Stable DQN: Conservative hyperparams, PER, input normalization, soft targets",
+                foreground="darkblue"
+            )
+        elif "Enhanced" in model_type:
             self.model_info_label.config(
                 text="✨ Enhanced: A* guidance, curriculum learning, trap detection",
                 foreground="green"
@@ -2124,9 +2262,75 @@ class TrainingUI:
             
             # Determine which training script to use based on model type
             model_type = self.model_type_var.get()
+            use_qlearning = "Q-Learning" in model_type
             use_enhanced = "Enhanced" in model_type
+            use_stable = "Stable" in model_type
             
-            if use_enhanced:
+            if use_qlearning:
+                # Use Q-Learning training script (train_qlearning.py)
+                training_script_path = os.path.join(os.path.dirname(__file__), "train_qlearning.py")
+                cmd = [
+                    sys.executable,
+                    training_script_path,
+                    "--episodes", str(episodes),
+                    "--save-interval", str(save_interval),
+                    "--learning-rate", str(learning_rate),
+                    "--batch-size", str(batch_size)
+                ]
+                
+                self.add_to_log("=" * 50)
+                self.add_to_log("Q-LEARNING TRAINING")
+                self.add_to_log("=" * 50)
+                self.add_to_log(f"Algorithm: Tabular Q-Learning")
+                self.add_to_log(f"State Space: 11 features (discrete)")
+                self.add_to_log(f"Action Space: 4 absolute actions (UP/DOWN/LEFT/RIGHT)")
+                self.add_to_log(f"Learning Rate (α): {learning_rate}")
+                self.add_to_log(f"Batch Size: {batch_size} (experience replay)")
+                
+                # Check if model exists
+                qlearning_model_path = os.path.join(QMODEL_DIR, QMODEL_FILE)
+                if os.path.exists(qlearning_model_path):
+                    self.add_to_log(f"✓ Continuing from existing Q-table")
+                else:
+                    self.add_to_log(f"⚡ Starting with fresh Q-table")
+                
+            elif use_stable:
+                # Use Stable DQN training script (train_stable_dqn.py)
+                training_script_path = os.path.join(os.path.dirname(__file__), "train_stable_dqn.py")
+                
+                # Stable DQN uses steps, not episodes
+                # Convert episodes to approximate steps (assume ~50 steps per episode)
+                total_steps = episodes * 50
+                
+                cmd = [
+                    sys.executable,
+                    training_script_path,
+                    "--steps", str(total_steps),
+                    "--eval-interval", "50000",
+                    "--save-interval", str(save_interval * 50),
+                    "--warmup", "20000"
+                ]
+                
+                self.add_to_log("=" * 50)
+                self.add_to_log("STABLE DQN TRAINING")
+                self.add_to_log("=" * 50)
+                self.add_to_log(f"Algorithm: Stable DQN with PER")
+                self.add_to_log(f"State Space: 34 features (normalized)")
+                self.add_to_log(f"Action Space: 3 relative actions")
+                self.add_to_log(f"Total Steps: {total_steps:,} (~{episodes} episodes)")
+                self.add_to_log(f"Architecture: 34 → 128 → 128 → Dueling(64)")
+                self.add_to_log(f"Features: Input normalization, PER (α=0.6), Double DQN")
+                self.add_to_log(f"Optimizer: Adam (LR=3e-4), Soft targets (τ=0.005)")
+                self.add_to_log(f"Warmup: 20k random steps for normalization")
+                
+                # Check if model exists
+                stable_model_path = os.path.join(QMODEL_DIR, "snake_stable_dqn.pth")
+                if os.path.exists(stable_model_path):
+                    self.add_to_log(f"✓ Checkpoint found (will prompt to continue)")
+                else:
+                    self.add_to_log(f"⚡ Starting fresh training")
+                
+            elif use_enhanced:
                 # Use the enhanced training script (train_enhanced.py)
                 training_script_path = os.path.join(os.path.dirname(__file__), "train_enhanced.py")
                 cmd = [
@@ -2397,6 +2601,13 @@ class TrainingUI:
         # Parse episode info - handles both integer and floating point scores
         # Format: Enhanced DQN Episode: 100/1000, Score: 25.5, Steps: 45, Best: 35.2, Avg: 15.5, Epsilon: 0.9, LR: 0.00350, Curriculum: Stage 1, A*: 0.50, Time: 120.5s
         match = re.search(r'(?:Enhanced )?DQN Episode: (\d+)/(\d+), Score: ([\d.eE+-]+), Steps: (\d+), Best: ([\d.eE+-]+), Avg: ([\d.]+), Epsilon: ([\d.]+)(?:, LR: ([\d.]+))?(?:, Curriculum: Stage (\d+))?(?:, A\*: ([\d.]+))?, Time: ([\d.]+)s', line)
+        
+        # Also check for Q-Learning output format
+        # Format: "Episode 100 | Score: 25 | Steps: 45 | Avg: 15.50 | epsilon: 0.9500 | Q-states: 500 | Best: 35"
+        qlearning_match = None
+        if not match:
+            qlearning_match = re.search(r'Episode\s+(\d+)\s*\|\s*Score:\s*(\d+)\s*\|\s*Steps:\s*(\d+)\s*\|\s*Avg:\s*([\d.]+)\s*\|\s*epsilon:\s*([\d.]+)\s*\|\s*Q-states:\s*(\d+)\s*\|\s*Best:\s*(\d+)', line)
+        
         if match:
             episode = int(match.group(1))
             total_episodes = int(match.group(2))
@@ -2448,6 +2659,49 @@ class TrainingUI:
                 if 'lr_values' not in self.training_data:
                     self.training_data['lr_values'] = []
                 self.training_data['lr_values'].append(lr)  # Store actual LR
+        
+        elif qlearning_match:
+            # Handle Q-Learning output format
+            episode = int(qlearning_match.group(1))
+            score = int(qlearning_match.group(2))
+            steps = int(qlearning_match.group(3))
+            avg = float(qlearning_match.group(4))
+            epsilon = float(qlearning_match.group(5))
+            q_states = int(qlearning_match.group(6))
+            best = int(qlearning_match.group(7))
+            
+            # Update progress in UI
+            self.root.after(0, lambda e=episode: self.progress_label.config(text=f"{e}"))
+            self.root.after(0, lambda b=best: self.score_label.config(text=f"{b}"))
+            
+            # Create training summary
+            summary = f"Episode: {episode} | Score: {score} | Best: {best} | Avg: {avg:.2f} | Steps: {steps} | Epsilon: {epsilon:.4f} | Q-states: {q_states}"
+            self.root.after(0, lambda s=summary: self.add_to_log(f"Q-Learning Status: {s}", is_status=False))
+            
+            # Track training data
+            if not hasattr(self, 'training_data'):
+                self.training_data = {
+                    'scores': [],
+                    'running_avgs': [],
+                    'steps': [],
+                    'best_score': 0,
+                    'epsilon_values': [],
+                    'q_states': []
+                }
+            
+            self.training_data['scores'].append(score)
+            self.training_data['running_avgs'].append(avg)
+            self.training_data['steps'].append(steps)
+            self.training_data['best_score'] = max(self.training_data['best_score'], best)
+            self.training_data['epsilon_values'].append(epsilon)
+            
+            # Track Q-table size for Q-Learning
+            if 'q_states' not in self.training_data:
+                self.training_data['q_states'] = []
+            self.training_data['q_states'].append(q_states)
+            
+            # Update graphs (Q-Learning doesn't have losses/q_values like DQN)
+            self.root.after(0, lambda s=[score], a=[avg]: self.update_training_graph(scores=s, running_avgs=a))
     
     def add_to_log(self, message, is_status=False, log_type="training"):
         """Add a message to the training or system log.
