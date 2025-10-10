@@ -4,8 +4,7 @@ Enhanced Training UI for Snake Game DQN training.
 This module provides a GUI interface for the headless training module with:
 1. Parameter configuration (episodes, save intervals, etc.)
 2. Model selection and visualization of training progress
-3. Real-time training graphs options
-4. Overview of existing models and their statistics
+3. Overview of existing models and their statistics
 """
 
 import os
@@ -50,6 +49,11 @@ class TrainingUI:
             self.selected_model = tk.StringVar()
             self.training_log = []
             self.curriculum_advancements = []  # Track when curriculum advances: [(episode, old_stage, new_stage), ...]
+            
+            # Performance optimization: Track last update time and plot objects
+            self.last_full_redraw = 0
+            self.plot_objects = {}  # Store plot line objects for incremental updates
+            self.last_episode_count = 0  # Track if new data arrived
             
             # Create main frames
         except Exception as e:
@@ -180,8 +184,7 @@ class TrainingUI:
         arch_combo = ttk.Combobox(
             control_frame,
             textvariable=self.arch_model_type,
-            values=["Q-Learning (Tabular)", "Original DQN (11 features)", 
-                   "Enhanced DQN (34 features)", "Stable DQN (34 features)"],
+            values=["Q-Learning (Tabular)", "Enhanced DQN (34 features)"],
             state="readonly",
             width=35
         )
@@ -213,25 +216,13 @@ class TrainingUI:
         model_type = self.arch_model_type.get()
         is_qlearning = "Q-Learning" in model_type
         is_enhanced = "Enhanced" in model_type
-        is_stable = "Stable" in model_type
         
         if is_qlearning:
             # Q-Learning tabular approach - visualize differently
             self.draw_qlearning_diagram()
             return
         
-        if is_stable:
-            # Stable DQN architecture: 34 -> 128 -> 128 -> Dueling Heads
-            layers = [
-                ("Input", 34, "Normalized"),
-                ("Hidden 1", 128, "ReLU"),
-                ("Hidden 2", 128, "ReLU"),
-                ("Value", 64, "V(s)"),
-                ("Advantage", 64, "A(s,a)"),
-                ("Output", 3, "Q-Values")
-            ]
-            title = "Stable DQN Architecture (34 features)\nPER, Double DQN, Soft Target Updates, Input Normalization"
-        elif is_enhanced:
+        if is_enhanced:
             # Enhanced DQN architecture: 34 -> 256 -> 128 -> 4 (with dueling)
             layers = [
                 ("Input", 34, "State Features"),
@@ -242,14 +233,15 @@ class TrainingUI:
             ]
             title = "Enhanced DQN Architecture (34 features)\nWith Dueling Network, Double DQN, Prioritized Experience Replay"
         else:
-            # Original DQN architecture: 11 -> 128 -> 64 -> 4
+            # Default to Enhanced DQN
             layers = [
-                ("Input", 11, "State Features"),
-                ("Hidden 1", 128, "ReLU"),
-                ("Hidden 2", 64, "ReLU"),
+                ("Input", 34, "State Features"),
+                ("Hidden 1", 256, "ReLU"),
+                ("Hidden 2", 128, "ReLU"),
+                ("Value Stream", 128, "Advantage"),
                 ("Output", 4, "Q-Values")
             ]
-            title = "Original DQN Architecture (11 features)\nWith Double DQN, Prioritized Experience Replay"
+            title = "Enhanced DQN Architecture (34 features)\nWith Dueling Network, Double DQN, Prioritized Experience Replay"
         
         # Calculate positions
         n_layers = len(layers)
@@ -486,15 +478,16 @@ class TrainingUI:
             return
         
         try:
-            # Determine model type from filename or try to load
+            # Determine model type from filename
             is_enhanced = "enhanced" in model_path.lower()
             
             if is_enhanced:
                 feature_names = self.get_enhanced_feature_names()
                 num_features = 34
             else:
-                feature_names = self.get_original_feature_names()
-                num_features = 11
+                # Assume Q-Learning model (doesn't use feature analysis)
+                self.add_to_log("Feature analysis is only available for Enhanced DQN models.", log_type="system")
+                return
             
             n_samples = int(self.feat_samples.get())
             
@@ -524,12 +517,12 @@ class TrainingUI:
                 agent.policy_net.eval()
                 model = agent.policy_net
             else:
-                from advanced_dqn import AdvancedDQNAgent
+                from enhanced_dqn import EnhancedDQNAgent
                 from game_engine import GameEngine
                 
                 # Create a temporary game engine and agent
                 game = GameEngine()
-                agent = AdvancedDQNAgent(num_features, game)
+                agent = EnhancedDQNAgent(game)
                 
                 # Load the model weights
                 checkpoint = torch.load(model_path, map_location=device)
@@ -714,21 +707,6 @@ class TrainingUI:
             "A* Suggests Straight", "A* Suggests Right", "A* Suggests Left"
         ]
     
-    def get_original_feature_names(self):
-        """Get feature names for original DQN (11 features)."""
-        return [
-            # Danger (8 features)
-            "Danger Straight", "Danger Right", "Danger Left",
-            "Danger Up", "Danger Down", "Danger Left_abs", "Danger Right_abs",
-            "Danger Body",
-            
-            # Food direction (2 features)
-            "Food Left", "Food Right", "Food Up", "Food Down",
-            
-            # Current direction (1 feature - one-hot encoded as 4)
-            "Direction Up", "Direction Down", "Direction Left", "Direction Right"
-        ]
-    
     def setup_live_state_viz(self):
         """Set up the live game state analysis visualization."""
         # Info label
@@ -833,8 +811,9 @@ class TrainingUI:
                 feature_names = self.get_enhanced_feature_names()
                 num_features = 34
             else:
-                feature_names = self.get_original_feature_names()
-                num_features = 11
+                # Q-Learning models don't use DQN features
+                self.add_to_log("Live analysis is only available for Enhanced DQN models.", log_type="system")
+                return
             
             self.add_to_log(f"Loading model for live analysis...", log_type="system")
             
@@ -919,12 +898,12 @@ class TrainingUI:
                     astar_action_name = "No path found"
                 
             else:
-                from advanced_dqn import AdvancedDQNAgent
+                from enhanced_dqn import EnhancedDQNAgent
                 from game_engine import GameEngine
                 
                 # Create a temporary game engine and agent
                 game = GameEngine()
-                agent = AdvancedDQNAgent(num_features, game)
+                agent = EnhancedDQNAgent(game)
                 
                 # Load the model weights
                 checkpoint = torch.load(model_path, map_location=device)
@@ -956,7 +935,7 @@ class TrainingUI:
                     q_values = q_values_tensor.cpu().numpy()[0]
                 
                 astar_action = None
-                astar_action_name = "N/A (Original DQN)"
+                astar_action_name = "N/A"
             
             action_names = ["Straight", "Right", "Left", "Opposite"]
             best_action = np.argmax(q_values)
@@ -1144,9 +1123,8 @@ class TrainingUI:
         self.model_type_combo = ttk.Combobox(
             model_type_frame,
             textvariable=self.model_type_var,
-            values=["Q-Learning (Tabular)", "Original DQN (11 features)", 
-                   "Enhanced DQN (34 features)", "Stable DQN (34 features)"],
-            width=30,
+            values=["Q-Learning (Tabular)", "Enhanced DQN (34 features)"],
+            width=35,
             state="readonly"
         )
         self.model_type_combo.pack(side=tk.RIGHT)
@@ -1218,19 +1196,6 @@ class TrainingUI:
         )
         self.learning_rate_spinbox.pack(side=tk.LEFT)
         
-        # Real-time graphs
-        graph_frame = ttk.Frame(self.param_frame)
-        graph_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Label(graph_frame, text="Real-time Graphs:").pack(side=tk.LEFT)
-        
-        self.show_graphs_var = tk.BooleanVar(value=False)
-        self.show_graphs_check = ttk.Checkbutton(
-            graph_frame,
-            variable=self.show_graphs_var
-        )
-        self.show_graphs_check.pack(side=tk.RIGHT)
-        
         # Start from checkpoint
         checkpoint_frame = ttk.Frame(self.param_frame)
         checkpoint_frame.pack(fill=tk.X, pady=5)
@@ -1277,6 +1242,151 @@ class TrainingUI:
         
         self.browse_btn = ttk.Button(dir_frame, text="Browse", command=self.browse_model_dir)
         self.browse_btn.pack(side=tk.RIGHT)
+        
+        # ============================================================
+        # STUCK DETECTION CONTROLS - NEW!
+        # ============================================================
+        separator = ttk.Separator(self.param_frame, orient='horizontal')
+        separator.pack(fill=tk.X, pady=10)
+        
+        stuck_header_frame = ttk.Frame(self.param_frame)
+        stuck_header_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        ttk.Label(stuck_header_frame, text="🎯 Stuck Detection & Epsilon Boost", 
+                 font=('Arial', 10, 'bold'), foreground='darkblue').pack(side=tk.LEFT)
+        
+        # Enable/Disable stuck detection
+        stuck_enable_frame = ttk.Frame(self.param_frame)
+        stuck_enable_frame.pack(fill=tk.X, pady=5)
+        
+        self.stuck_detection_var = tk.BooleanVar(value=ENABLE_STUCK_DETECTION)
+        stuck_check = ttk.Checkbutton(
+            stuck_enable_frame,
+            text="Enable Stuck Detection",
+            variable=self.stuck_detection_var,
+            command=self.on_stuck_detection_toggled
+        )
+        stuck_check.pack(side=tk.LEFT)
+        
+        ttk.Label(stuck_enable_frame, text="(Boosts epsilon when agent is stuck)", 
+                 font=('Arial', 8, 'italic'), foreground='gray').pack(side=tk.LEFT, padx=(10, 0))
+        
+        # Create a frame for stuck detection parameters (can be disabled)
+        self.stuck_params_frame = ttk.Frame(self.param_frame)
+        self.stuck_params_frame.pack(fill=tk.X, pady=5)
+        
+        # Sensitivity (Stuck Counter Threshold)
+        sensitivity_frame = ttk.Frame(self.stuck_params_frame)
+        sensitivity_frame.pack(fill=tk.X, pady=3)
+        
+        ttk.Label(sensitivity_frame, text="Sensitivity:").pack(side=tk.LEFT)
+        
+        self.stuck_sensitivity_var = tk.IntVar(value=STUCK_COUNTER_THRESHOLD)
+        sensitivity_scale = ttk.Scale(
+            sensitivity_frame,
+            from_=1,
+            to=10,
+            variable=self.stuck_sensitivity_var,
+            orient=tk.HORIZONTAL,
+            length=150,
+            command=lambda v: self.stuck_sensitivity_label.config(
+                text=f"{int(float(v))} checks ({int(float(v)) * 50} episodes)"
+            )
+        )
+        sensitivity_scale.pack(side=tk.LEFT, padx=5)
+        
+        self.stuck_sensitivity_label = ttk.Label(
+            sensitivity_frame,
+            text=f"{STUCK_COUNTER_THRESHOLD} checks ({STUCK_COUNTER_THRESHOLD * 50} episodes)"
+        )
+        self.stuck_sensitivity_label.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(sensitivity_frame, text="(1=aggressive, 10=conservative)", 
+                 font=('Arial', 7, 'italic'), foreground='gray').pack(side=tk.LEFT)
+        
+        # Cooldown Period
+        cooldown_frame = ttk.Frame(self.stuck_params_frame)
+        cooldown_frame.pack(fill=tk.X, pady=3)
+        
+        ttk.Label(cooldown_frame, text="Cooldown:").pack(side=tk.LEFT)
+        
+        self.stuck_cooldown_var = tk.IntVar(value=STUCK_BOOST_COOLDOWN)
+        cooldown_scale = ttk.Scale(
+            cooldown_frame,
+            from_=50,
+            to=500,
+            variable=self.stuck_cooldown_var,
+            orient=tk.HORIZONTAL,
+            length=150,
+            command=lambda v: self.stuck_cooldown_label.config(text=f"{int(float(v))} episodes")
+        )
+        cooldown_scale.pack(side=tk.LEFT, padx=5)
+        
+        self.stuck_cooldown_label = ttk.Label(
+            cooldown_frame,
+            text=f"{STUCK_BOOST_COOLDOWN} episodes"
+        )
+        self.stuck_cooldown_label.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(cooldown_frame, text="(time between boosts)", 
+                 font=('Arial', 7, 'italic'), foreground='gray').pack(side=tk.LEFT)
+        
+        # Boost Amount
+        boost_frame = ttk.Frame(self.stuck_params_frame)
+        boost_frame.pack(fill=tk.X, pady=3)
+        
+        ttk.Label(boost_frame, text="Boost Amount:").pack(side=tk.LEFT)
+        
+        self.stuck_boost_var = tk.DoubleVar(value=STUCK_EPSILON_BOOST)
+        boost_scale = ttk.Scale(
+            boost_frame,
+            from_=0.05,
+            to=0.30,
+            variable=self.stuck_boost_var,
+            orient=tk.HORIZONTAL,
+            length=150,
+            command=lambda v: self.stuck_boost_label.config(text=f"+{float(v):.2f}")
+        )
+        boost_scale.pack(side=tk.LEFT, padx=5)
+        
+        self.stuck_boost_label = ttk.Label(
+            boost_frame,
+            text=f"+{STUCK_EPSILON_BOOST:.2f}"
+        )
+        self.stuck_boost_label.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(boost_frame, text="(epsilon increase)", 
+                 font=('Arial', 7, 'italic'), foreground='gray').pack(side=tk.LEFT)
+        
+        # Improvement Threshold
+        improvement_frame = ttk.Frame(self.stuck_params_frame)
+        improvement_frame.pack(fill=tk.X, pady=3)
+        
+        ttk.Label(improvement_frame, text="Min Improvement:").pack(side=tk.LEFT)
+        
+        self.stuck_improvement_var = tk.DoubleVar(value=STUCK_IMPROVEMENT_THRESHOLD)
+        improvement_scale = ttk.Scale(
+            improvement_frame,
+            from_=2.0,
+            to=15.0,
+            variable=self.stuck_improvement_var,
+            orient=tk.HORIZONTAL,
+            length=150,
+            command=lambda v: self.stuck_improvement_label.config(text=f"{float(v):.1f} points")
+        )
+        improvement_scale.pack(side=tk.LEFT, padx=5)
+        
+        self.stuck_improvement_label = ttk.Label(
+            improvement_frame,
+            text=f"{STUCK_IMPROVEMENT_THRESHOLD:.1f} points"
+        )
+        self.stuck_improvement_label.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(improvement_frame, text="(to avoid stuck)", 
+                 font=('Arial', 7, 'italic'), foreground='gray').pack(side=tk.LEFT)
+        
+        # Set initial state of stuck params
+        self.on_stuck_detection_toggled()
 
     def create_models_panel(self):
         """Create the available models panel with a Treeview."""
@@ -1547,33 +1657,21 @@ class TrainingUI:
         )
         info_label.pack(side=tk.LEFT, padx=10)
             
-        # Create a 2x2 grid of useful training metrics
-        self.fig, self.axs = plt.subplots(2, 2, figsize=(16, 10))
+        # Create a 2x1 grid (top-bottom layout) of useful training metrics
+        self.fig, self.axs = plt.subplots(2, 1, figsize=(16, 10))
         self.fig.suptitle('Training Performance Analysis', fontsize=18, fontweight='bold')
         
-        # Top-left: Score progression with running average
-        self.axs[0, 0].set_title('Score Progression', fontsize=14, fontweight='bold')
-        self.axs[0, 0].set_xlabel('Episode', fontsize=12)
-        self.axs[0, 0].set_ylabel('Score', fontsize=12)
-        self.axs[0, 0].grid(True, alpha=0.3)
+        # Top: Score progression with running average
+        self.axs[0].set_title('Score Progression', fontsize=14, fontweight='bold')
+        self.axs[0].set_xlabel('Episode', fontsize=12)
+        self.axs[0].set_ylabel('Score', fontsize=12)
+        self.axs[0].grid(True, alpha=0.3)
         
-        # Top-right: Epsilon decay over time
-        self.axs[0, 1].set_title('Exploration Rate (Epsilon)', fontsize=14, fontweight='bold')
-        self.axs[0, 1].set_xlabel('Episode', fontsize=12)
-        self.axs[0, 1].set_ylabel('Epsilon', fontsize=12)
-        self.axs[0, 1].grid(True, alpha=0.3)
-        
-        # Bottom-left: Episode duration (steps taken)
-        self.axs[1, 0].set_title('Episode Duration (Steps)', fontsize=14, fontweight='bold')
-        self.axs[1, 0].set_xlabel('Episode', fontsize=12)
-        self.axs[1, 0].set_ylabel('Steps', fontsize=12)
-        self.axs[1, 0].grid(True, alpha=0.3)
-        
-        # Bottom-right: Score distribution histogram
-        self.axs[1, 1].set_title('Score Distribution (Last 100)', fontsize=14, fontweight='bold')
-        self.axs[1, 1].set_xlabel('Score', fontsize=12)
-        self.axs[1, 1].set_ylabel('Frequency', fontsize=12)
-        self.axs[1, 1].grid(True, alpha=0.3)
+        # Bottom: Epsilon decay over time
+        self.axs[1].set_title('Exploration Rate (Epsilon)', fontsize=14, fontweight='bold')
+        self.axs[1].set_xlabel('Episode', fontsize=12)
+        self.axs[1].set_ylabel('Epsilon', fontsize=12)
+        self.axs[1].grid(True, alpha=0.3)
         
         # Adjust spacing between subplots
         plt.tight_layout()
@@ -1622,153 +1720,293 @@ class TrainingUI:
             # Add log message
             self.add_to_log("Training graphs reset. Ready for new training session.")
 
-    def update_training_graph(self, scores=None, running_avgs=None, losses=None, q_values=None):
-        """Update the training graph with useful metrics for DQN analysis."""
+    def update_training_graph(self, scores=None, running_avgs=None, losses=None, q_values=None, force_full_redraw=False):
+        """
+        Update the training graph with useful metrics for DQN analysis.
+        
+        PERFORMANCE OPTIMIZED:
+        - Supports incremental updates (just append new data points)
+        - Only does full redraw when force_full_redraw=True or every 50 episodes
+        - Reuses plot objects instead of recreating them
+        - Gradient indicators are updated only on full redraws for performance
+        """
+        if not scores or len(scores) == 0:
+            return
+        
+        # OPTIMIZATION: Force full redraw every 50 episodes to update gradient indicators
+        # Gradient indicators show learning momentum and need periodic refresh
+        current_episode = len(scores)
+        force_gradient_update = (current_episode % 50 == 0)
+        
+        # OPTIMIZATION: Incremental update if possible
+        if not force_full_redraw and not force_gradient_update and hasattr(self, 'plot_objects') and self.plot_objects:
+            # Try incremental update (much faster)
+            try:
+                episodes = list(range(1, len(scores) + 1))
+                
+                # Update line data instead of redrawing
+                if 'score_line' in self.plot_objects:
+                    self.plot_objects['score_line'].set_data(episodes, scores)
+                if 'avg_line' in self.plot_objects and running_avgs and len(running_avgs) == len(scores):
+                    self.plot_objects['avg_line'].set_data(episodes, running_avgs)
+                
+                # Update epsilon line on second graph
+                if 'epsilon_line' in self.plot_objects:
+                    epsilon_values = self.training_data.get('epsilon_values', [])
+                    if epsilon_values and len(epsilon_values) >= len(scores):
+                        self.plot_objects['epsilon_line'].set_data(episodes, epsilon_values[:len(scores)])
+                
+                # Update LR line on second graph (secondary y-axis)
+                if 'lr_line' in self.plot_objects:
+                    lr_values = self.training_data.get('lr_values', [])
+                    if lr_values and len(lr_values) >= len(scores):
+                        self.plot_objects['lr_line'].set_data(episodes, lr_values[:len(scores)])
+                
+                # Rescale axes
+                for ax in self.axs:
+                    ax.relim()
+                    ax.autoscale_view()
+                
+                # Redraw canvas (lightweight)
+                self.canvas.draw_idle()  # Use draw_idle instead of draw for better performance
+                return  # Skip full redraw
+            except Exception as e:
+                # If incremental update fails, fall back to full redraw
+                print(f"Incremental update failed, doing full redraw: {e}")
+                pass
+        
+        # FULL REDRAW (only when necessary)
         # Clear all plots
         for i in range(2):
-            for j in range(2):
-                self.axs[i, j].clear()
+            self.axs[i].clear()
         
-        # ===== GRAPH 1: Score Progression (Top-Left) =====
-        self.axs[0, 0].set_title('Score Progression', fontsize=14, fontweight='bold')
-        self.axs[0, 0].set_xlabel('Episode', fontsize=12)
-        self.axs[0, 0].set_ylabel('Score', fontsize=12)
+        # Reset plot objects dictionary
+        self.plot_objects = {}
+        
+        # ===== GRAPH 1: Score Progression (Left) =====
+        self.axs[0].set_title('Score Progression', fontsize=14, fontweight='bold')
+        self.axs[0].set_xlabel('Episode', fontsize=12)
+        self.axs[0].set_ylabel('Score', fontsize=12)
         
         if scores and len(scores) > 0:
             episodes = list(range(1, len(scores) + 1))
             
-            # Plot individual scores with low alpha
-            self.axs[0, 0].plot(episodes, scores, 'b-', linewidth=0.8, alpha=0.3, label='Score')
+            # Plot individual scores with low alpha - STORE REFERENCE
+            score_line, = self.axs[0].plot(episodes, scores, 'b-', linewidth=0.8, alpha=0.3, label='Score')
+            self.plot_objects['score_line'] = score_line
             
-            # Plot running average
+            # Plot running average - STORE REFERENCE
             if running_avgs and len(running_avgs) == len(scores):
-                self.axs[0, 0].plot(episodes, running_avgs, 'r-', linewidth=2.5, label='Avg (100)', zorder=10)
+                avg_line, = self.axs[0].plot(episodes, running_avgs, 'r-', linewidth=2.5, label='Avg (100)', zorder=10)
+                self.plot_objects['avg_line'] = avg_line
             
-            # Add curriculum stage thresholds
+            # Add curriculum stage thresholds (static, no need to store)
             thresholds = [20, 50, 100, 200]
             colors = ['green', 'orange', 'purple', 'red']
             labels = ['Stage 0→1', 'Stage 1→2', 'Stage 2→3', 'Stage 3→4']
             for threshold, color, label in zip(thresholds, colors, labels):
-                self.axs[0, 0].axhline(y=threshold, color=color, linestyle='--', alpha=0.6, linewidth=1.5, label=label)
+                self.axs[0].axhline(y=threshold, color=color, linestyle='--', alpha=0.6, linewidth=1.5, label=label)
             
-            # ===== NEW: Highlight curriculum advancements =====
+            # ===== OPTIMIZATION: Limit curriculum advancement annotations =====
+            # Only show last 5 advancements to reduce clutter on long training runs
             if hasattr(self, 'curriculum_advancements') and self.curriculum_advancements:
-                for episode, old_stage, new_stage in self.curriculum_advancements:
+                recent_advancements = self.curriculum_advancements[-5:]  # Last 5 only
+                for episode, old_stage, new_stage in recent_advancements:
                     if episode <= len(scores):
                         score_at_advancement = scores[episode - 1] if episode > 0 else 0
                         
                         # Add vertical line at advancement
-                        self.axs[0, 0].axvline(x=episode, color='cyan', linestyle=':', linewidth=2, alpha=0.8, zorder=5)
+                        self.axs[0].axvline(x=episode, color='cyan', linestyle=':', linewidth=2, alpha=0.8, zorder=5)
                         
                         # Add star marker
-                        self.axs[0, 0].scatter([episode], [score_at_advancement], 
+                        self.axs[0].scatter([episode], [score_at_advancement], 
                                               marker='*', s=400, color='cyan', 
                                               edgecolors='darkblue', linewidths=2, zorder=15,
-                                              label=f'Stage {old_stage}→{new_stage}' if episode == self.curriculum_advancements[0][0] else '')
+                                              label=f'Stage {old_stage}→{new_stage}' if episode == recent_advancements[0][0] else '')
                         
-                        # Add annotation
-                        self.axs[0, 0].annotate(f'Stage {new_stage}', 
-                                               xy=(episode, score_at_advancement),
-                                               xytext=(episode + len(episodes)*0.02, score_at_advancement + 20),
-                                               arrowprops=dict(facecolor='cyan', shrink=0.05, width=1.5),
-                                               fontsize=10, fontweight='bold', color='darkblue',
-                                               bbox=dict(boxstyle='round,pad=0.3', facecolor='cyan', alpha=0.7))
+                        # OPTIMIZATION: Simplify annotations - no arrows for better performance
+                        self.axs[0].text(episode, score_at_advancement + 20, f'S{new_stage}',
+                                        fontsize=9, fontweight='bold', color='darkblue',
+                                        ha='center', va='bottom',
+                                        bbox=dict(boxstyle='round,pad=0.3', facecolor='cyan', alpha=0.7))
             
-            # Add max score annotation
+            # Add max score annotation (simplified)
             max_score = max(scores)
             max_idx = scores.index(max_score)
-            self.axs[0, 0].scatter([episodes[max_idx]], [max_score], color='gold', s=100, zorder=15, edgecolors='black', linewidths=2)
-            self.axs[0, 0].annotate(f'Best: {max_score}', 
-                                   xy=(episodes[max_idx], max_score),
-                                   xytext=(episodes[max_idx] + len(episodes)*0.05, max_score),
-                                   arrowprops=dict(facecolor='gold', shrink=0.05, width=1.5),
-                                   fontsize=11, fontweight='bold')
+            self.axs[0].scatter([episodes[max_idx]], [max_score], color='gold', s=100, zorder=15, edgecolors='black', linewidths=2)
+            self.axs[0].text(episodes[max_idx], max_score + 10, f'Best: {max_score:.0f}',
+                            fontsize=10, fontweight='bold', ha='center', va='bottom',
+                            bbox=dict(boxstyle='round,pad=0.3', facecolor='gold', alpha=0.8))
             
-            self.axs[0, 0].legend(loc='upper left', fontsize=9, ncol=2)
+            # ===== GRADIENT INDICATORS: Show rate of change in average scores =====
+            # Calculate gradients (rate of change) for different time scales
+            if running_avgs and len(running_avgs) >= 100:
+                current_avg = running_avgs[-1]
+                
+                # Gradient 1: Current to Initial (overall learning rate)
+                initial_avg = running_avgs[0] if running_avgs else 0
+                total_episodes = len(running_avgs)
+                gradient_initial = (current_avg - initial_avg) / total_episodes if total_episodes > 0 else 0
+                
+                # Gradient 2: Current to Mid-point (mid-term learning rate)
+                mid_idx = len(running_avgs) // 2
+                mid_avg = running_avgs[mid_idx]
+                mid_episodes = len(running_avgs) - mid_idx
+                gradient_mid = (current_avg - mid_avg) / mid_episodes if mid_episodes > 0 else 0
+                
+                # Gradient 3: Current to Last 100 (recent learning momentum)
+                last_100_start_idx = max(0, len(running_avgs) - 100)
+                last_100_start_avg = running_avgs[last_100_start_idx]
+                last_100_episodes = len(running_avgs) - last_100_start_idx
+                gradient_recent = (current_avg - last_100_start_avg) / last_100_episodes if last_100_episodes > 0 else 0
+                
+                # Determine colors based on gradient values (green = positive, red = negative, yellow = near zero)
+                def get_gradient_color(gradient_value):
+                    if gradient_value > 0.05:
+                        return '#00CC00'  # Bright green - strong positive
+                    elif gradient_value > 0.01:
+                        return '#88FF88'  # Light green - weak positive
+                    elif gradient_value > -0.01:
+                        return '#FFFF00'  # Yellow - stagnant
+                    elif gradient_value > -0.05:
+                        return '#FFAA00'  # Orange - weak negative
+                    else:
+                        return '#FF0000'  # Red - strong negative
+                
+                # Create gradient indicator boxes in the upper right corner of the graph
+                y_max = max(scores) if scores else 100
+                x_max = len(scores)
+                
+                # Position boxes in upper right corner
+                box_x = x_max * 0.75  # 75% across the x-axis
+                box_y_start = y_max * 0.95  # Start at 95% of max y
+                box_spacing = y_max * 0.08  # Space between boxes
+                
+                # Box 1: Overall gradient (current to initial)
+                gradient_1_color = get_gradient_color(gradient_initial)
+                self.axs[0].text(box_x, box_y_start, 
+                                f'Overall: {gradient_initial:+.3f} pts/ep',
+                                fontsize=9, fontweight='bold', ha='left', va='top',
+                                bbox=dict(boxstyle='round,pad=0.4', facecolor=gradient_1_color, 
+                                         edgecolor='black', linewidth=1.5, alpha=0.85),
+                                zorder=20)
+                
+                # Box 2: Mid-term gradient (current to mid-point)
+                gradient_2_color = get_gradient_color(gradient_mid)
+                self.axs[0].text(box_x, box_y_start - box_spacing, 
+                                f'Mid-term: {gradient_mid:+.3f} pts/ep',
+                                fontsize=9, fontweight='bold', ha='left', va='top',
+                                bbox=dict(boxstyle='round,pad=0.4', facecolor=gradient_2_color, 
+                                         edgecolor='black', linewidth=1.5, alpha=0.85),
+                                zorder=20)
+                
+                # Box 3: Recent gradient (last 100 episodes)
+                gradient_3_color = get_gradient_color(gradient_recent)
+                self.axs[0].text(box_x, box_y_start - 2 * box_spacing, 
+                                f'Recent: {gradient_recent:+.3f} pts/ep',
+                                fontsize=9, fontweight='bold', ha='left', va='top',
+                                bbox=dict(boxstyle='round,pad=0.4', facecolor=gradient_3_color, 
+                                         edgecolor='black', linewidth=1.5, alpha=0.85),
+                                zorder=20)
+                
+                # Add a small legend explaining the gradient indicators
+                self.axs[0].text(box_x, box_y_start - 3 * box_spacing - 5,
+                                '(Rate of avg score change)',
+                                fontsize=7, ha='left', va='top', style='italic',
+                                color='gray', zorder=20)
+            
+            # OPTIMIZATION: Simplify legend - fewer columns
+            self.axs[0].legend(loc='upper left', fontsize=8, ncol=1)
         
-        self.axs[0, 0].grid(True, alpha=0.3)
+        self.axs[0].grid(True, alpha=0.3)
         
-        # ===== GRAPH 2: Epsilon & Learning Rate Decay (Top-Right) =====
-        self.axs[0, 1].set_title('Exploration Rate (Epsilon) & Learning Rate', fontsize=14, fontweight='bold')
-        self.axs[0, 1].set_xlabel('Episode', fontsize=12)
-        self.axs[0, 1].set_ylabel('Epsilon', fontsize=12, color='purple')
-        self.axs[0, 1].tick_params(axis='y', labelcolor='purple')
+        # ===== GRAPH 2: Epsilon & Learning Rate Decay (Right) =====
+        self.axs[1].set_title('Exploration Rate (Epsilon) & Learning Rate', fontsize=14, fontweight='bold')
+        self.axs[1].set_xlabel('Episode', fontsize=12)
+        self.axs[1].set_ylabel('Epsilon', fontsize=12, color='purple')
+        self.axs[1].tick_params(axis='y', labelcolor='purple')
         
         if scores and len(scores) > 0:
-            # Use ACTUAL epsilon values from training if available
+            # OPTIMIZATION: Use cached epsilon/LR values from training data
+            # This avoids expensive recalculation on every redraw
             if hasattr(self, 'training_data') and 'epsilon_values' in self.training_data and self.training_data['epsilon_values']:
                 epsilon_values = self.training_data['epsilon_values']
             else:
-                # Fallback: Calculate epsilon decay based on training parameters (for old data or models)
-                epsilon_decay = 0.997
-                epsilon_start = 1.0
-                
-                epsilon_values = []
-                current_epsilon = epsilon_start
-                stage_minimums = {0: 0.10, 1: 0.05, 2: 0.04, 3: 0.02, 4: 0.01}
-                
-                for ep in range(len(scores)):
-                    # Determine curriculum stage (simplified)
-                    if len(running_avgs) > ep:
-                        avg = running_avgs[ep]
-                        if avg >= 200:
-                            stage = 4
-                        elif avg >= 100:
-                            stage = 3
-                        elif avg >= 50:
-                            stage = 2
-                        elif avg >= 20:
-                            stage = 1
+                # Fallback: Calculate epsilon decay ONCE and cache it
+                if not hasattr(self, '_cached_epsilon') or len(self._cached_epsilon) < len(scores):
+                    epsilon_decay = 0.997
+                    epsilon_start = 1.0
+                    
+                    epsilon_values = []
+                    current_epsilon = epsilon_start
+                    stage_minimums = {0: 0.10, 1: 0.05, 2: 0.04, 3: 0.02, 4: 0.01}
+                    
+                    for ep in range(len(scores)):
+                        # Determine curriculum stage (simplified)
+                        if running_avgs and len(running_avgs) > ep:
+                            avg = running_avgs[ep]
+                            if avg >= 200:
+                                stage = 4
+                            elif avg >= 100:
+                                stage = 3
+                            elif avg >= 50:
+                                stage = 2
+                            elif avg >= 20:
+                                stage = 1
+                            else:
+                                stage = 0
                         else:
                             stage = 0
-                    else:
-                        stage = 0
-                    
-                    stage_min = stage_minimums.get(stage, 0.01)
-                    if current_epsilon > stage_min:
-                        current_epsilon *= epsilon_decay
-                    else:
-                        current_epsilon = stage_min
                         
-                    epsilon_values.append(current_epsilon)
+                        stage_min = stage_minimums.get(stage, 0.01)
+                        if current_epsilon > stage_min:
+                            current_epsilon *= epsilon_decay
+                        else:
+                            current_epsilon = stage_min
+                            
+                        epsilon_values.append(current_epsilon)
+                    
+                    self._cached_epsilon = epsilon_values  # Cache for next time
+                else:
+                    epsilon_values = self._cached_epsilon
             
-            # Get ACTUAL learning rate values from training if available
+            # OPTIMIZATION: Use cached LR values from training data
             if hasattr(self, 'training_data') and 'lr_values' in self.training_data and self.training_data['lr_values']:
                 lr_values = self.training_data['lr_values']
             else:
-                # Fallback: Calculate LR decay based on new progressive decay system
-                lr_values = []
-                current_lr = 0.005  # Stage 0 starting LR
-                
-                stage_lr_minimums = {0: 0.002, 1: 0.0015, 2: 0.001, 3: 0.0005, 4: 0.0002}
-                stage_lr_decay = {0: 0.9985, 1: 0.9990, 2: 0.9992, 3: 0.9995, 4: 0.9997}
-                stage_lr_starts = {0: 0.005, 1: 0.003, 2: 0.002, 3: 0.001, 4: 0.0005}
-                
-                prev_stage = 0
-                for ep in range(len(scores)):
-                    # Determine curriculum stage (simplified)
-                    if len(running_avgs) > ep:
-                        avg = running_avgs[ep]
-                        if avg >= 200:
-                            stage = 4
-                        elif avg >= 100:
-                            stage = 3
-                        elif avg >= 50:
-                            stage = 2
-                        elif avg >= 20:
-                            stage = 1
+                # Fallback: Calculate LR decay ONCE and cache it
+                if not hasattr(self, '_cached_lr') or len(self._cached_lr) < len(scores):
+                    lr_values = []
+                    current_lr = 0.005  # Stage 0 starting LR
+                    
+                    stage_lr_starts = {0: 0.005, 1: 0.003, 2: 0.002, 3: 0.001, 4: 0.0005}
+                    
+                    prev_stage = 0
+                    for ep in range(len(scores)):
+                        # Determine curriculum stage (simplified)
+                        if running_avgs and len(running_avgs) > ep:
+                            avg = running_avgs[ep]
+                            if avg >= 200:
+                                stage = 4
+                            elif avg >= 100:
+                                stage = 3
+                            elif avg >= 50:
+                                stage = 2
+                            elif avg >= 20:
+                                stage = 1
+                            else:
+                                stage = 0
                         else:
                             stage = 0
-                    else:
-                        stage = 0
+                        
+                        # Reset LR when stage advances
+                        if stage != prev_stage:
+                            current_lr = stage_lr_starts.get(stage, 0.001)
+                            prev_stage = stage
                     
-                    # Reset LR when stage advances
-                    if stage != prev_stage:
-                        current_lr = stage_lr_starts.get(stage, 0.001)
-                        prev_stage = stage
-                    
-                    stage_lr_min = stage_lr_minimums.get(stage, 0.0002)
-                    lr_decay_rate = stage_lr_decay.get(stage, 0.9995)
+                    # Use decay parameters from constants.py
+                    stage_lr_min = STAGE_LR_MINIMUMS.get(stage, 0.0002)
+                    lr_decay_rate = STAGE_LR_DECAY.get(stage, 0.9995)
                     
                     if current_lr > stage_lr_min:
                         current_lr *= lr_decay_rate
@@ -1776,6 +2014,10 @@ class TrainingUI:
                         current_lr = stage_lr_min
                     
                     lr_values.append(current_lr)
+                
+                    self._cached_lr = lr_values  # Cache for next time
+                else:
+                    lr_values = self._cached_lr
             
             # Ensure epsilon_values matches scores length
             if len(epsilon_values) > len(scores):
@@ -1796,136 +2038,68 @@ class TrainingUI:
             
             episodes = list(range(1, len(epsilon_values) + 1))
             
-            # Plot epsilon on primary axis
-            self.axs[0, 1].plot(episodes, epsilon_values, 'purple', linewidth=2.5, label='Epsilon', zorder=5)
+            # Plot epsilon on primary axis - STORE REFERENCE
+            epsilon_line, = self.axs[1].plot(episodes, epsilon_values, 'purple', linewidth=2.5, label='Epsilon', zorder=5)
+            self.plot_objects['epsilon_line'] = epsilon_line
             
-            # Add stage minimum lines for epsilon
-            stage_minimums = {0: 0.10, 1: 0.05, 2: 0.04, 3: 0.02, 4: 0.01}
-            for stage, min_eps in stage_minimums.items():
-                self.axs[0, 1].axhline(y=min_eps, color='gray', linestyle=':', alpha=0.4, linewidth=1)
-                self.axs[0, 1].text(len(episodes) * 0.02, min_eps + 0.01, f'ε Stage {stage}', fontsize=7, color='gray')
+            # OPTIMIZATION: Simplify stage minimums - just show as text, no lines
+            # (Lines add visual clutter and slow down rendering)
+            stage_text = "Min eps: S0=0.10, S1=0.05, S2=0.04, S3=0.02, S4=0.01"
+            self.axs[1].text(0.02, 0.95, stage_text, transform=self.axs[1].transAxes,
+                            fontsize=7, color='gray', va='top',
+                            bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
             
-            # Detect and highlight epsilon boosts (stuck detection)
+            # OPTIMIZATION: Detect epsilon boosts but limit markers to last 3 only
+            boost_episodes = []
             if len(epsilon_values) > 1:
                 for i in range(1, len(epsilon_values)):
                     # If epsilon increased by more than 0.05, it's likely a stuck detection boost
                     if epsilon_values[i] > epsilon_values[i-1] + 0.05:
-                        self.axs[0, 1].axvline(x=i+1, color='orange', linestyle='--', linewidth=2, alpha=0.5, zorder=3)
-                        self.axs[0, 1].scatter([i+1], [epsilon_values[i]], color='orange', s=100, zorder=10, 
-                                              edgecolors='red', linewidths=2, marker='^')
+                        boost_episodes.append(i+1)
             
-            # Highlight current epsilon
+            # Only show last 3 boosts to reduce clutter
+            for boost_ep in boost_episodes[-3:]:
+                if boost_ep <= len(epsilon_values):
+                    self.axs[1].axvline(x=boost_ep, color='orange', linestyle='--', linewidth=1.5, alpha=0.4, zorder=3)
+                    self.axs[1].scatter([boost_ep], [epsilon_values[boost_ep-1]], color='orange', s=80, zorder=10, 
+                                          edgecolors='red', linewidths=1.5, marker='^')
+            
+            # Highlight current epsilon (simplified - no annotation)
             if len(epsilon_values) > 0:
                 current_eps = epsilon_values[-1]
-                self.axs[0, 1].scatter([len(epsilon_values)], [current_eps], color='purple', s=100, zorder=10, edgecolors='black', linewidths=2)
-                self.axs[0, 1].annotate(f'ε={current_eps:.4f}', 
-                                       xy=(len(epsilon_values), current_eps),
-                                       xytext=(len(epsilon_values) * 0.70, current_eps + 0.15),
-                                       fontsize=10, fontweight='bold', color='purple')
+                self.axs[1].scatter([len(epsilon_values)], [current_eps], color='purple', s=100, zorder=10, edgecolors='black', linewidths=2)
+                self.axs[1].text(len(epsilon_values) * 0.70, current_eps + 0.15,
+                                f'eps={current_eps:.4f}',
+                                fontsize=9, fontweight='bold', color='purple')
             
             # Create secondary y-axis for learning rate
-            ax2 = self.axs[0, 1].twinx()
+            ax2 = self.axs[1].twinx()
             ax2.set_ylabel('Learning Rate', fontsize=12, color='green')
             ax2.tick_params(axis='y', labelcolor='green')
             
-            # Plot learning rate as simple dashed line (no markers or annotations)
-            ax2.plot(episodes, lr_values, color='green', linewidth=2.5, label='Learning Rate', linestyle='--', zorder=4)
+            # Plot learning rate - STORE REFERENCE
+            lr_line, = ax2.plot(episodes, lr_values, color='green', linewidth=2.5, label='Learning Rate', linestyle='--', zorder=4)
+            self.plot_objects['lr_line'] = lr_line
             
             # Set y-axis limits
-            self.axs[0, 1].set_ylim(-0.05, 1.05)
+            self.axs[1].set_ylim(-0.05, 1.05)
             ax2.set_ylim(0, max(lr_values) * 1.2 if lr_values else 0.006)
             
             # Combine legends
-            lines1, labels1 = self.axs[0, 1].get_legend_handles_labels()
+            lines1, labels1 = self.axs[1].get_legend_handles_labels()
             lines2, labels2 = ax2.get_legend_handles_labels()
-            self.axs[0, 1].legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=9)
+            self.axs[1].legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=8)
         
-        self.axs[0, 1].grid(True, alpha=0.3)
-        
-        # ===== GRAPH 3: Episode Duration in Steps (Bottom-Left) =====s
-        self.axs[1, 0].set_title('Episode Duration (Steps)', fontsize=14, fontweight='bold')
-        self.axs[1, 0].set_xlabel('Episode', fontsize=12)
-        self.axs[1, 0].set_ylabel('Steps Survived', fontsize=12)
-        
-        if scores and len(scores) > 0:
-            # Estimate steps from scores (each food is roughly 20-50 steps depending on distance)
-            # This is a rough approximation: steps ≈ score * 2 + random_factor
-            # In reality, you'd want to log actual steps from training
-            estimated_steps = [max(20, int(s * 2.5 + 10)) for s in scores]
-            
-            episodes = list(range(1, len(estimated_steps) + 1))
-            
-            # Calculate moving average of steps
-            window = 50
-            if len(estimated_steps) >= window:
-                steps_avg = [sum(estimated_steps[max(0, i-window):i+1]) / min(window, i+1) for i in range(len(estimated_steps))]
-                self.axs[1, 0].plot(episodes, steps_avg, 'orange', linewidth=2.5, label=f'Avg ({window} eps)', zorder=10)
-            
-            # Plot individual steps with scatter
-            self.axs[1, 0].scatter(episodes, estimated_steps, c='blue', alpha=0.2, s=10, label='Steps')
-            
-            # Add trend line
-            if len(estimated_steps) > 10:
-                z = np.polyfit(episodes, estimated_steps, 2)
-                p = np.poly1d(z)
-                self.axs[1, 0].plot(episodes, p(episodes), "g--", alpha=0.7, linewidth=2, label='Trend')
-            
-            self.axs[1, 0].legend(loc='upper left', fontsize=10)
-        
-        self.axs[1, 0].grid(True, alpha=0.3)
-        
-        # ===== GRAPH 4: Score Distribution (Bottom-Right) =====
-        self.axs[1, 1].set_title('Score Distribution (Last 100)', fontsize=14, fontweight='bold')
-        self.axs[1, 1].set_xlabel('Score', fontsize=12)
-        self.axs[1, 1].set_ylabel('Frequency', fontsize=12)
-        
-        if scores and len(scores) > 0:
-            recent_scores = scores[-100:] if len(scores) >= 100 else scores
-            
-            # Create histogram
-            n, bins, patches = self.axs[1, 1].hist(recent_scores, bins=20, edgecolor='black', alpha=0.7, color='steelblue')
-            
-            # Color code by curriculum thresholds
-            thresholds = [20, 50, 100, 200]
-            colors_map = ['lightcoral', 'lightyellow', 'lightgreen', 'lightblue', 'lightpurple']
-            
-            for i, patch in enumerate(patches):
-                bin_center = (bins[i] + bins[i+1]) / 2
-                if bin_center < 20:
-                    patch.set_facecolor('lightcoral')
-                elif bin_center < 50:
-                    patch.set_facecolor('lightyellow')
-                elif bin_center < 100:
-                    patch.set_facecolor('lightgreen')
-                elif bin_center < 200:
-                    patch.set_facecolor('lightblue')
-                else:
-                    patch.set_facecolor('mediumpurple')
-            
-            # Add statistics
-            if len(recent_scores) > 0:
-                mean_score = np.mean(recent_scores)
-                median_score = np.median(recent_scores)
-                std_score = np.std(recent_scores)
-                
-                self.axs[1, 1].axvline(mean_score, color='red', linestyle='--', linewidth=2.5, label=f'Mean: {mean_score:.1f}')
-                self.axs[1, 1].axvline(median_score, color='green', linestyle='--', linewidth=2.5, label=f'Median: {median_score:.1f}')
-                
-                # Add text box with stats
-                stats_text = f'μ={mean_score:.1f}\nσ={std_score:.1f}\nMin={min(recent_scores):.0f}\nMax={max(recent_scores):.0f}'
-                self.axs[1, 1].text(0.98, 0.97, stats_text, transform=self.axs[1, 1].transAxes,
-                                   fontsize=10, verticalalignment='top', horizontalalignment='right',
-                                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-                
-                self.axs[1, 1].legend(loc='upper left', fontsize=10)
-        
-        self.axs[1, 1].grid(True, alpha=0.3, axis='y')
+        self.axs[1].grid(True, alpha=0.3)
         
         # Update the overall figure
         self.fig.suptitle('Training Performance Analysis', fontsize=18, fontweight='bold')
         plt.tight_layout()
-        plt.subplots_adjust(hspace=0.3, wspace=0.25, top=0.93)
-        self.canvas.draw()
+        plt.subplots_adjust(wspace=0.25, top=0.93)
+        
+        # OPTIMIZATION: Use draw_idle() instead of draw() for better performance
+        # draw_idle() defers the actual rendering until the system is idle
+        self.canvas.draw_idle()
 
     def browse_model_dir(self):
         """Open a dialog to select the models directory."""
@@ -2186,11 +2360,6 @@ class TrainingUI:
                 text="📚 Q-Learning: Tabular method, absolute actions, perfect memory",
                 foreground="purple"
             )
-        elif "Stable" in model_type:
-            self.model_info_label.config(
-                text="🎯 Stable DQN: Conservative hyperparams, PER, input normalization, soft targets",
-                foreground="darkblue"
-            )
         elif "Enhanced" in model_type:
             self.model_info_label.config(
                 text="✨ Enhanced: A* guidance, curriculum learning, trap detection",
@@ -2198,9 +2367,20 @@ class TrainingUI:
             )
         else:
             self.model_info_label.config(
-                text="📊 Original: Standard DQN with 11-feature state",
-                foreground="blue"
+                text="✨ Enhanced: A* guidance, curriculum learning, trap detection",
+                foreground="green"
             )
+    
+    def on_stuck_detection_toggled(self):
+        """Enable/disable stuck detection parameter controls."""
+        is_enabled = self.stuck_detection_var.get()
+        
+        # Enable or disable all child widgets in stuck_params_frame
+        for child in self.stuck_params_frame.winfo_children():
+            for widget in child.winfo_children():
+                widget_type = widget.winfo_class()
+                if widget_type in ('TLabel', 'TScale', 'TEntry', 'TSpinbox'):
+                    widget.config(state='normal' if is_enabled else 'disabled')
     
     def find_next_model_number(self):
         """Find the next available model number."""
@@ -2239,7 +2419,6 @@ class TrainingUI:
             save_interval = int(self.save_interval_var.get())
             batch_size = int(self.batch_size_var.get())
             learning_rate = float(self.learning_rate_var.get())
-            show_graphs = self.show_graphs_var.get()
             use_checkpoint = self.use_checkpoint_var.get()
             
             # Validate parameters
@@ -2264,7 +2443,6 @@ class TrainingUI:
             model_type = self.model_type_var.get()
             use_qlearning = "Q-Learning" in model_type
             use_enhanced = "Enhanced" in model_type
-            use_stable = "Stable" in model_type
             
             if use_qlearning:
                 # Use Q-Learning training script (train_qlearning.py)
@@ -2294,42 +2472,6 @@ class TrainingUI:
                 else:
                     self.add_to_log(f"⚡ Starting with fresh Q-table")
                 
-            elif use_stable:
-                # Use Stable DQN training script (train_stable_dqn.py)
-                training_script_path = os.path.join(os.path.dirname(__file__), "train_stable_dqn.py")
-                
-                # Stable DQN uses steps, not episodes
-                # Convert episodes to approximate steps (assume ~50 steps per episode)
-                total_steps = episodes * 50
-                
-                cmd = [
-                    sys.executable,
-                    training_script_path,
-                    "--steps", str(total_steps),
-                    "--eval-interval", "50000",
-                    "--save-interval", str(save_interval * 50),
-                    "--warmup", "20000"
-                ]
-                
-                self.add_to_log("=" * 50)
-                self.add_to_log("STABLE DQN TRAINING")
-                self.add_to_log("=" * 50)
-                self.add_to_log(f"Algorithm: Stable DQN with PER")
-                self.add_to_log(f"State Space: 34 features (normalized)")
-                self.add_to_log(f"Action Space: 3 relative actions")
-                self.add_to_log(f"Total Steps: {total_steps:,} (~{episodes} episodes)")
-                self.add_to_log(f"Architecture: 34 → 128 → 128 → Dueling(64)")
-                self.add_to_log(f"Features: Input normalization, PER (α=0.6), Double DQN")
-                self.add_to_log(f"Optimizer: Adam (LR=3e-4), Soft targets (τ=0.005)")
-                self.add_to_log(f"Warmup: 20k random steps for normalization")
-                
-                # Check if model exists
-                stable_model_path = os.path.join(QMODEL_DIR, "snake_stable_dqn.pth")
-                if os.path.exists(stable_model_path):
-                    self.add_to_log(f"✓ Checkpoint found (will prompt to continue)")
-                else:
-                    self.add_to_log(f"⚡ Starting fresh training")
-                
             elif use_enhanced:
                 # Use the enhanced training script (train_enhanced.py)
                 training_script_path = os.path.join(os.path.dirname(__file__), "train_enhanced.py")
@@ -2347,6 +2489,21 @@ class TrainingUI:
                     cmd.extend(["--model-number", str(model_number)])
                     self.add_to_log(f"Using model number: {model_number}")
                 
+                # Add stuck detection parameters
+                if hasattr(self, 'stuck_detection_var'):
+                    if self.stuck_detection_var.get():
+                        cmd.extend([
+                            "--enable-stuck-detection",
+                            "--stuck-sensitivity", str(self.stuck_sensitivity_var.get()),
+                            "--stuck-cooldown", str(self.stuck_cooldown_var.get()),
+                            "--stuck-boost", str(self.stuck_boost_var.get()),
+                            "--stuck-improvement", str(self.stuck_improvement_var.get())
+                        ])
+                        self.add_to_log(f"Stuck Detection: ENABLED (sensitivity={self.stuck_sensitivity_var.get()}, cooldown={self.stuck_cooldown_var.get()} eps)")
+                    else:
+                        cmd.append("--disable-stuck-detection")
+                        self.add_to_log(f"Stuck Detection: DISABLED")
+                
                 # Enhanced model: checkbox checked = new model, unchecked = continue training
                 if use_checkpoint:
                     cmd.append("--new-model")
@@ -2362,32 +2519,6 @@ class TrainingUI:
                 
                 self.add_to_log(f"Using Enhanced DQN (34 features, A* reward shaping, curriculum learning)")
                 self.add_to_log(f"NOTE: Model architecture updated to 34 features - incompatible with old 31-feature models")
-            else:
-                # Use original headless training script
-                headless_script_path = os.path.join(os.path.dirname(__file__), "headless_training.py")
-                cmd = [
-                    sys.executable,
-                    headless_script_path,
-                    "--episodes", str(episodes),
-                    "--save-interval", str(save_interval),
-                    "--batch-size", str(batch_size),
-                    "--learning-rate", str(learning_rate)
-                ]
-                
-                if show_graphs:
-                    cmd.append("--show-graphs")
-                
-                # Check if model exists
-                model_exists = os.path.exists(os.path.join(QMODEL_DIR, DQN_MODEL_FILE))
-                
-                # Checkbox checked = new model, unchecked = continue training
-                if not model_exists or use_checkpoint:
-                    cmd.append("--new-model")
-                    self.add_to_log("Starting with fresh Original DQN model")
-                else:
-                    self.add_to_log("Continuing training from existing Original DQN checkpoint")
-                
-                self.add_to_log(f"Using Original DQN (11 features)")
                 
             # Start the training process
             self.add_to_log(f"Starting training with parameters: {' '.join(cmd[2:])}")
@@ -2796,24 +2927,75 @@ class TrainingUI:
                             creationflags=subprocess.CREATE_NEW_CONSOLE)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to run CUDA check: {str(e)}")
+    
+    def get_dynamic_update_interval(self):
+        """
+        Calculate dynamic update interval based on training progress.
+        Reduces update frequency as training progresses to improve performance.
+        """
+        if not hasattr(self, 'training_data') or not self.training_data.get('scores'):
+            return 2000  # Default 2 seconds for early training
+        
+        episode_count = len(self.training_data['scores'])
+        
+        # Dynamic intervals based on episode count
+        if episode_count < 50:
+            return 1000  # 1 second - fast feedback for early training
+        elif episode_count < 150:
+            return 2000  # 2 seconds
+        elif episode_count < 300:
+            return 3000  # 3 seconds
+        elif episode_count < 500:
+            return 5000  # 5 seconds
+        else:
+            return 8000  # 8 seconds - very long training runs
 
     def update_ui(self):
-        """Periodically update the UI elements."""
-        # Update memory usage
+        """Periodically update the UI elements with performance optimizations."""
+        # OPTIMIZATION 1: Skip updates if window is minimized/hidden
+        try:
+            window_state = self.root.state()
+            if window_state in ('iconic', 'withdrawn'):
+                # Window minimized/hidden, skip expensive updates
+                update_interval = self.get_dynamic_update_interval()
+                self.root.after(update_interval, self.update_ui)
+                return
+        except:
+            pass  # Continue if state check fails
+        
+        # Update memory usage (lightweight)
         self.update_memory_usage()
         
-        # Update training graph if training is active and we have data
+        # OPTIMIZATION 2: Only update graph if training is active AND new data arrived
         if self.is_training and hasattr(self, 'training_data') and self.training_data['scores']:
-            # Update the graph with current training data
-            self.update_training_graph(
-                scores=self.training_data['scores'],
-                running_avgs=self.training_data['running_avgs'],
-                losses=self.training_data.get('losses', []),
-                q_values=self.training_data.get('q_values', [])
-            )
+            current_episode_count = len(self.training_data['scores'])
+            
+            # Only update if new data arrived
+            if current_episode_count > self.last_episode_count:
+                self.last_episode_count = current_episode_count
+                
+                # OPTIMIZATION 3: Decide between incremental update vs full redraw
+                # Full redraw every 50 episodes OR if curriculum just advanced
+                should_full_redraw = (
+                    current_episode_count - self.last_full_redraw >= 50 or
+                    current_episode_count < 10  # Always full redraw for first 10 episodes
+                )
+                
+                # Update the graph with current training data
+                self.update_training_graph(
+                    scores=self.training_data['scores'],
+                    running_avgs=self.training_data['running_avgs'],
+                    losses=self.training_data.get('losses', []),
+                    q_values=self.training_data.get('q_values', []),
+                    force_full_redraw=should_full_redraw
+                )
+                
+                if should_full_redraw:
+                    self.last_full_redraw = current_episode_count
         
-        # Schedule the next update
-        self.root.after(2000, self.update_ui)
+        # OPTIMIZATION 4: Schedule next update with dynamic interval
+        update_interval = self.get_dynamic_update_interval()
+        self.root.after(update_interval, self.update_ui)
 
 def main():
     """Main entry point for the Training UI."""

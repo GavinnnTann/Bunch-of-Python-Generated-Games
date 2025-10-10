@@ -124,3 +124,99 @@ DQN_LEARNING_STARTS = 2000  # SPEED OPTIMIZATION: Increased from 1000 for more d
 DQN_TRAINING_EPISODES_OPTIONS = [100, 500, 1000, 5000, 10000]
 DEFAULT_DQN_TRAINING_EPISODES = 1000
 DQN_MODEL_SAVE_INTERVAL = 100  # Save model every N episodes
+
+# ============================================================
+# ENHANCED DQN DECAY PARAMETERS
+# ============================================================
+# These parameters control epsilon and learning rate decay
+# for the Enhanced DQN agent during curriculum learning.
+# Edit these values to adjust exploration/exploitation balance.
+
+# Epsilon Decay Rates (per episode)
+# Lower value = faster decay (less exploration sooner)
+# Higher value = slower decay (more exploration longer)
+# Formula: epsilon_new = epsilon_old × decay_rate
+# Half-life examples: 0.9965→198 eps, 0.995→138 eps, 0.990→69 eps
+STAGE_EPSILON_DECAY = {
+    0: 0.96,  # Stage 0: Slower decay (half-life ~200 episodes)
+    1: 0.965,   # Stage 1: Medium decay (half-life ~138 episodes)
+    2: 0.975,   # Stage 2: Standard decay (half-life ~173 episodes)
+    3: 0.985,   # Stage 3: Conservative decay (half-life ~231 episodes)
+    4: 0.997    # Stage 4: Conservative decay (half-life ~231 episodes)
+}
+
+# Epsilon Minimum Values (per stage)
+# Higher value = more exploration even late in training
+# Lower value = more exploitation late in training
+STAGE_EPSILON_MINIMUMS = {
+    0: 0.1,   # Stage 0: Min 10% random actions
+    1: 0.05,  # Stage 1: Min 5% random actions
+    2: 0.04,  # Stage 2: Min 4% random actions
+    3: 0.02,  # Stage 3: Min 2% random actions
+    4: 0.01   # Stage 4: Min 1% random actions
+}
+
+# Learning Rate Decay Rates (per episode)
+# Lower value = faster decay (quicker stabilization)
+# Higher value = slower decay (maintains plasticity longer)
+# Formula: learning_rate_new = learning_rate_old × decay_rate
+STAGE_LR_DECAY = {
+    0: 0.9990,  # Stage 0: Slower decay to maintain strong learning
+    1: 0.9993,  # Stage 1: Slower decay
+    2: 0.9995,  # Stage 2: Standard decay
+    3: 0.9997,  # Stage 3: Conservative decay
+    4: 0.9998   # Stage 4: Very slow fine-tuning
+}
+
+# Learning Rate Minimum Values (per stage)
+# Higher value = keeps learning stronger
+# Lower value = more fine-tuning capability
+STAGE_LR_MINIMUMS = {
+    0: 0.002,   # Stage 0: Decay from 0.005 down to 0.002
+    1: 0.0015,  # Stage 1: Decay from 0.003 down to 0.0015
+    2: 0.001,   # Stage 2: Decay from 0.002 down to 0.001
+    3: 0.0005,  # Stage 3: Decay from 0.001 down to 0.0005
+    4: 0.0002   # Stage 4: Decay from 0.0005 down to 0.0002
+}
+
+# ============================================================
+# STUCK DETECTION PARAMETERS
+# ============================================================
+# Controls when and how the agent gets an epsilon boost to escape
+# local optima. Based on analysis, boosts may be too aggressive.
+
+# Enable/Disable stuck detection entirely
+ENABLE_STUCK_DETECTION = True  # Set to False to disable all boosts
+
+# How many consecutive stuck checks before triggering boost
+# Higher value = more conservative (less frequent boosts)
+# Lower value = more aggressive (more frequent boosts)
+# Default: 3 means 3 × 50 episodes = 150 episodes of being stuck
+STUCK_COUNTER_THRESHOLD = 3  # Range: 1-10 (1=very aggressive, 10=very conservative)
+
+# Cooldown period between boosts (in episodes)
+# Prevents oscillation from too-frequent boosts
+# Higher value = longer wait between boosts
+STUCK_BOOST_COOLDOWN = 200  # Range: 50-500 episodes
+
+# Epsilon boost amount when stuck is detected
+# How much to increase epsilon when agent is stuck
+# Higher value = more exploration after boost
+# Lower value = gentler boost
+STUCK_EPSILON_BOOST = 0.10  # Range: 0.05-0.30 (0.10 = 10% increase)
+
+# Maximum epsilon after boost
+# Caps how high epsilon can go from boosts
+STUCK_EPSILON_MAX = 0.4  # Range: 0.3-0.6
+
+# Improvement threshold for stuck detection
+# How much average score must improve to NOT be considered stuck
+# Higher value = harder to avoid being marked as stuck
+# Lower value = easier to avoid being marked as stuck
+STUCK_IMPROVEMENT_THRESHOLD = 5.0  # Range: 2.0-15.0 points
+
+# Variance threshold for stuck detection
+# Maximum score variance to be considered stuck
+# Lower value = requires more consistent scores to be stuck
+# Higher value = allows more variance while stuck
+STUCK_VARIANCE_THRESHOLD = 100.0  # Range: 50.0-500.0

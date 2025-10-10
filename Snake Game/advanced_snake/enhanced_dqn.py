@@ -13,10 +13,235 @@ import numpy as np
 import random
 import torch
 import torch.nn as nn
+import torch.optim as optim
 from collections import deque
 from constants import *
-from advanced_dqn import AdvancedDQNAgent, DuelingDQN, device
 from algorithms import SnakeAlgorithms
+
+# Set device for PyTorch
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+class DuelingDQN(nn.Module):
+    """
+    Dueling DQN architecture that separately estimates:
+    - State value V(s)
+    - Advantage for each action A(s,a)
+    
+    Q(s,a) = V(s) + (A(s,a) - mean(A(s)))
+    """
+    def __init__(self, state_size, action_size, hidden_size=256):
+        super(DuelingDQN, self).__init__()
+        
+        # Shared feature layers
+        self.feature_layer = nn.Sequential(
+            nn.Linear(state_size, hidden_size),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.Dropout(0.2)
+        )
+        
+        # Value stream - estimates V(s)
+        self.value_stream = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_size // 2, 1)
+        )
+        
+        # Advantage stream - estimates A(s,a)
+        self.advantage_stream = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_size // 2, action_size)
+        )
+    
+    def forward(self, state):
+        """Forward pass through the network."""
+        features = self.feature_layer(state)
+        
+        # Calculate value and advantages
+        value = self.value_stream(features)
+        advantages = self.advantage_stream(features)
+        
+        # Combine using dueling architecture formula
+        # Q(s,a) = V(s) + (A(s,a) - mean(A(s)))
+        q_values = value + (advantages - advantages.mean(dim=1, keepdim=True))
+        
+        return q_values
+
+
+class ReplayMemory:
+    """Replay memory with both add() and append() methods for compatibility."""
+    
+    def __init__(self, maxlen=100000):
+        self.memory = deque(maxlen=maxlen)
+    
+    def add(self, state, action, reward, next_state, done):
+        """Add experience to memory."""
+        self.memory.append((state, action, reward, next_state, done))
+    
+    def append(self, experience):
+        """Append experience tuple to memory."""
+        self.memory.append(experience)
+    
+    def sample(self, batch_size):
+        """Sample a batch of experiences."""
+        return random.sample(self.memory, batch_size)
+    
+    def __len__(self):
+        """Return the current size of memory."""
+        return len(self.memory)
+
+
+class BaseDQNAgent:
+    """
+    Base DQN Agent with standard DQN functionality.
+    Provides the foundation for enhanced agents.
+    """
+    
+    def __init__(self, game_engine, state_size=11, action_size=3, hidden_size=256):
+        """Initialize DQN agent."""
+        self.game_engine = game_engine
+        self.state_size = state_size
+        self.action_size = action_size
+        self.memory = ReplayMemory(maxlen=100000)
+        
+        # Hyperparameters
+        self.gamma = 0.95  # Discount rate
+        self.epsilon = 1.0  # Exploration rate
+        self.epsilon_min = 0.01
+        self.epsilon_decay = 0.995
+        self.learning_rate = 0.001
+        self.batch_size = 64
+        self.train_start = 200  # REDUCED from 1000 - start training much earlier!
+        
+        # Neural networks
+        self.policy_net = DuelingDQN(state_size, action_size, hidden_size).to(device)
+        self.target_net = DuelingDQN(state_size, action_size, hidden_size).to(device)
+        self.target_net.load_state_dict(self.policy_net.state_dict())
+        self.target_net.eval()
+        
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.learning_rate)
+        self.criterion = nn.MSELoss()
+        
+    def get_state(self):
+        """Get current game state - to be overridden by subclasses."""
+        raise NotImplementedError("Subclasses must implement get_state()")
+    
+    def remember(self, state, action, reward, next_state, done):
+        """Store experience in replay memory."""
+        self.memory.add(state, action, reward, next_state, done)
+    
+    def select_action(self, state, training=True):
+        """Select action using epsilon-greedy policy."""
+        if training and random.random() < self.epsilon:
+            return random.randrange(self.action_size)
+        
+        with torch.no_grad():
+            # Handle both tensor and array inputs
+            if isinstance(state, torch.Tensor):
+                state_tensor = state.unsqueeze(0) if state.dim() == 1 else state
+            else:
+                state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
+            
+            q_values = self.policy_net(state_tensor)
+            return q_values.argmax().item()
+    
+    def optimize_model(self):
+        """Optimize the model - alias for replay()."""
+        return self.replay()
+    
+    def replay(self, batch_size=None):
+        """Train on a batch of experiences from memory."""
+        if len(self.memory) < self.train_start:
+            return 0
+        
+        if batch_size is None:
+            batch_size = self.batch_size
+        
+        # Ensure we have enough samples for the batch
+        if len(self.memory) < batch_size:
+            batch_size = len(self.memory)
+        
+        minibatch = self.memory.sample(batch_size)
+        
+        # Handle both tensor and array states
+        states_list = []
+        next_states_list = []
+        for transition in minibatch:
+            state = transition[0]
+            next_state = transition[3]
+            
+            # Convert to numpy if tensor, then back to tensor for batching
+            if isinstance(state, torch.Tensor):
+                states_list.append(state.cpu().numpy() if state.is_cuda else state.numpy())
+            else:
+                states_list.append(state)
+            
+            if isinstance(next_state, torch.Tensor):
+                next_states_list.append(next_state.cpu().numpy() if next_state.is_cuda else next_state.numpy())
+            else:
+                next_states_list.append(next_state)
+        
+        states = torch.FloatTensor(states_list).to(device)
+        actions = torch.LongTensor([transition[1] for transition in minibatch]).to(device)
+        rewards = torch.FloatTensor([transition[2] for transition in minibatch]).to(device)
+        next_states = torch.FloatTensor(next_states_list).to(device)
+        dones = torch.FloatTensor([transition[4] for transition in minibatch]).to(device)
+        
+        # Current Q values
+        current_q_values = self.policy_net(states).gather(1, actions.unsqueeze(1))
+        
+        # Next Q values from target network
+        with torch.no_grad():
+            next_q_values = self.target_net(next_states).max(1)[0]
+            target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
+        
+        # Compute loss and update
+        loss = self.criterion(current_q_values.squeeze(), target_q_values)
+        
+        self.optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), 1.0)
+        self.optimizer.step()
+        
+        return loss.item()
+    
+    def update_target_network(self):
+        """Update target network with policy network weights."""
+        self.target_net.load_state_dict(self.policy_net.state_dict())
+    
+    def update_epsilon(self):
+        """Decay epsilon for exploration."""
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
+    
+    def save_model(self, filepath):
+        """Save model to file."""
+        checkpoint = {
+            'policy_net_state_dict': self.policy_net.state_dict(),
+            'target_net_state_dict': self.target_net.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'epsilon': self.epsilon,
+            'learning_rate': self.learning_rate,
+        }
+        torch.save(checkpoint, filepath)
+    
+    def load_model(self, filepath):
+        """Load model from file."""
+        checkpoint = torch.load(filepath, map_location=device)
+        self.policy_net.load_state_dict(checkpoint['policy_net_state_dict'])
+        self.target_net.load_state_dict(checkpoint['target_net_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.epsilon = checkpoint.get('epsilon', self.epsilon)
+        self.learning_rate = checkpoint.get('learning_rate', self.learning_rate)
+        
+        # Update optimizer learning rate
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = self.learning_rate
+
 
 
 class EnhancedStateRepresentation:
@@ -264,7 +489,7 @@ class EnhancedStateRepresentation:
                 pos in list(snake)[:-1])
 
 
-class EnhancedDQNAgent(AdvancedDQNAgent):
+class EnhancedDQNAgent(BaseDQNAgent):
     """
     Enhanced DQN Agent with:
     - Improved state representation (34 features including A* guidance)
@@ -624,46 +849,97 @@ class EnhancedDQNAgent(AdvancedDQNAgent):
                 near_threshold = abs(avg_score - stage_stuck_threshold) < stage_stuck_threshold * 0.3
                 improvement = abs(avg_score - self.last_avg_score)
                 
+                # Use configurable improvement threshold from constants
+                from constants import STUCK_IMPROVEMENT_THRESHOLD, STUCK_VARIANCE_THRESHOLD
+                
                 # Stage-specific stuck detection criteria (more lenient at early stages)
                 if self.curriculum_stage == 0:
                     # Stage 0: Stuck if near threshold (15-25) with no improvement OR very low scores
                     is_stuck = (
-                        (avg_score < 10 and score_variance < 20 and improvement < 1) or  # Very low scores
-                        (near_threshold and improvement < 2 and score_variance < 100)  # Plateau near threshold
+                        (avg_score < 10 and score_variance < 20 and improvement < STUCK_IMPROVEMENT_THRESHOLD / 5) or  # Very low scores
+                        (near_threshold and improvement < STUCK_IMPROVEMENT_THRESHOLD / 2.5 and score_variance < STUCK_VARIANCE_THRESHOLD)  # Plateau near threshold
                     )
                 elif self.curriculum_stage == 1:
                     # Stage 1: Moderate stuck detection
                     is_stuck = (
-                        (avg_score < 35 and score_variance < 40 and improvement < 2) or
-                        (near_threshold and improvement < 3)
+                        (avg_score < 35 and score_variance < 40 and improvement < STUCK_IMPROVEMENT_THRESHOLD / 2.5) or
+                        (near_threshold and improvement < STUCK_IMPROVEMENT_THRESHOLD / 1.67)
                     )
                 else:
                     # Stage 2+: Original stuck detection logic
                     is_stuck = (
-                        (score_variance < 50 and improvement < 2) or  # No improvement
-                        (avg_score < stage_stuck_threshold + 50 and improvement < 5)  # Stuck near threshold
+                        (score_variance < STUCK_VARIANCE_THRESHOLD / 2 and improvement < STUCK_IMPROVEMENT_THRESHOLD / 2.5) or  # No improvement
+                        (avg_score < stage_stuck_threshold + 50 and improvement < STUCK_IMPROVEMENT_THRESHOLD)  # Stuck near threshold
                     )
                 
-                if is_stuck:
+                # Check if stuck detection is enabled
+                from constants import ENABLE_STUCK_DETECTION, STUCK_COUNTER_THRESHOLD, STUCK_BOOST_COOLDOWN, STUCK_EPSILON_BOOST, STUCK_EPSILON_MAX
+                
+                if is_stuck and ENABLE_STUCK_DETECTION:
                     self.stuck_counter += 1
-                    if self.stuck_counter >= 3:  # Only after 3 consecutive stuck checks (150 episodes!)
-                        # ANTI-OSCILLATION: Don't boost if we recently boosted (within 200 episodes)
+                    if self.stuck_counter >= STUCK_COUNTER_THRESHOLD:  # Configurable threshold
+                        # ANTI-OSCILLATION: Don't boost if we recently boosted
                         episodes_since_boost = current_episode - self.last_epsilon_boost_episode
                         
-                        if episodes_since_boost < 200:
+                        if episodes_since_boost < STUCK_BOOST_COOLDOWN:  # Configurable cooldown
                             print(f"\n[COOLDOWN] Stuck detected but skipping boost (last boost {episodes_since_boost} episodes ago)")
-                            print(f"  • Need 200 episodes between boosts to prevent oscillation")
+                            print(f"  • Need {STUCK_BOOST_COOLDOWN} episodes between boosts to prevent oscillation")
                             print(f"  • Current avg: {avg_score:.1f}, Variance: {score_variance:.1f}")
                             self.stuck_counter = 0  # Reset to avoid repeated messages
                         else:
                             print(f"\n[WARNING] Agent appears stuck at Stage {self.curriculum_stage}!")
                             print(f"  • Current avg: {avg_score:.1f}, Variance: {score_variance:.1f}")
                             print(f"  • Target threshold: {stage_stuck_threshold}")
-                            print(f"  • Boosting epsilon from {self.epsilon:.4f} to {min(self.epsilon + 0.10, 0.4):.4f}")
-                            self.epsilon = min(self.epsilon + 0.10, 0.4)  # Larger boost for exploration
+                            print(f"  • Boosting epsilon from {self.epsilon:.4f} to {min(self.epsilon + STUCK_EPSILON_BOOST, STUCK_EPSILON_MAX):.4f}")
+                            self.epsilon = min(self.epsilon + STUCK_EPSILON_BOOST, STUCK_EPSILON_MAX)  # Configurable boost
                             self.last_epsilon_boost_episode = current_episode  # Track when we boosted
                             self.stuck_counter = 0
+                elif not ENABLE_STUCK_DETECTION:
+                    # Stuck detection disabled - reset counter
+                    self.stuck_counter = 0
                 else:
                     self.stuck_counter = 0
                 
                 self.last_avg_score = avg_score
+    
+    def save_model(self, filepath):
+        """Save model with curriculum information."""
+        checkpoint = {
+            'policy_net_state_dict': self.policy_net.state_dict(),
+            'target_net_state_dict': self.target_net.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'epsilon': self.epsilon,
+            'learning_rate': self.learning_rate,
+            'curriculum_stage': self.curriculum_stage,
+            'curriculum_success_count': self.curriculum_success_count,
+            'astar_guidance_prob': self.astar_guidance_prob,
+            'recent_scores': list(self.recent_scores),
+            'last_avg_score': self.last_avg_score,
+            'last_epsilon_boost_episode': self.last_epsilon_boost_episode,
+        }
+        torch.save(checkpoint, filepath)
+    
+    def load_model(self, filepath):
+        """Load model with curriculum information."""
+        checkpoint = torch.load(filepath, map_location=device)
+        self.policy_net.load_state_dict(checkpoint['policy_net_state_dict'])
+        self.target_net.load_state_dict(checkpoint['target_net_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.epsilon = checkpoint.get('epsilon', self.epsilon)
+        self.learning_rate = checkpoint.get('learning_rate', self.learning_rate)
+        
+        # Load curriculum information
+        self.curriculum_stage = checkpoint.get('curriculum_stage', 0)
+        self.curriculum_success_count = checkpoint.get('curriculum_success_count', 0)
+        self.astar_guidance_prob = checkpoint.get('astar_guidance_prob', 0.5)
+        
+        # Load recent scores if available
+        if 'recent_scores' in checkpoint:
+            self.recent_scores = deque(checkpoint['recent_scores'], maxlen=50)
+        
+        self.last_avg_score = checkpoint.get('last_avg_score', 0)
+        self.last_epsilon_boost_episode = checkpoint.get('last_epsilon_boost_episode', -200)
+        
+        # Update optimizer learning rate
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = self.learning_rate

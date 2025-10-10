@@ -205,14 +205,9 @@ def train_enhanced_dqn(episodes=1000, use_existing=True, save_interval=50, learn
         # ============================================================
         # Decay epsilon ONCE per episode with curriculum-based minimum
         # Different minimum epsilon per stage to maintain exploration
-        stage_epsilon_minimums = {
-            0: 0.1,  # Stage 0: Min 10% exploration
-            1: 0.05,  # Stage 1: Min 5% exploration
-            2: 0.04,  # Stage 2: Min 4% exploration
-            3: 0.02,  # Stage 3: Min 2% exploration
-            4: 0.01   # Stage 4: Min 1% exploration
-        }
-        stage_epsilon_min = stage_epsilon_minimums.get(agent.curriculum_stage, 0.01)
+        # NOTE: Decay parameters are configured in constants.py
+        # Edit STAGE_EPSILON_MINIMUMS and STAGE_EPSILON_DECAY to adjust
+        stage_epsilon_min = STAGE_EPSILON_MINIMUMS.get(agent.curriculum_stage, 0.01)
         
         # PERFORMANCE FIX: Force epsilon back up if it dropped too low
         # This can happen if epsilon was saved at a low value or decay was too aggressive
@@ -222,14 +217,7 @@ def train_enhanced_dqn(episodes=1000, use_existing=True, save_interval=50, learn
         
         # PERFORMANCE BOOST: Curriculum-adaptive epsilon decay
         # Faster decay at early stages for quicker exploitation
-        stage_epsilon_decay = {
-            0: 0.9965,  # SPEED OPTIMIZATION: Slower decay (half-life ~200 episodes, was ~100) for more exploration
-            1: 0.995,  # Medium decay
-            2: 0.996,  # Standard decay
-            3: 0.997,  # Conservative decay
-            4: 0.997
-        }
-        epsilon_decay_rate = stage_epsilon_decay.get(agent.curriculum_stage, 0.997)
+        epsilon_decay_rate = STAGE_EPSILON_DECAY.get(agent.curriculum_stage, 0.997)
         
         if agent.epsilon > stage_epsilon_min:
             agent.epsilon *= epsilon_decay_rate
@@ -240,24 +228,12 @@ def train_enhanced_dqn(episodes=1000, use_existing=True, save_interval=50, learn
         # PROGRESSIVE LEARNING RATE DECAY (per episode) - NEW!
         # ============================================================
         # Apply same decay strategy to learning rate for stability
-        stage_lr_minimums = {
-            0: 0.002,   # Stage 0: Decay from 0.005 down to 0.002
-            1: 0.0015,  # Stage 1: Decay from 0.003 down to 0.0015
-            2: 0.001,   # Stage 2: Decay from 0.002 down to 0.001
-            3: 0.0005,  # Stage 3: Decay from 0.001 down to 0.0005
-            4: 0.0002   # Stage 4: Decay from 0.0005 down to 0.0002
-        }
-        stage_lr_min = stage_lr_minimums.get(agent.curriculum_stage, 0.0002)
+        # NOTE: Decay parameters are configured in constants.py
+        # Edit STAGE_LR_MINIMUMS and STAGE_LR_DECAY to adjust
+        stage_lr_min = STAGE_LR_MINIMUMS.get(agent.curriculum_stage, 0.0002)
         
         # Decay rate slightly slower than epsilon (want to keep learning longer)
-        stage_lr_decay = {
-            0: 0.9990,  # SPEED OPTIMIZATION: Slower decay (was 0.9985) to maintain strong learning longer
-            1: 0.9993,  # SPEED OPTIMIZATION: Slower decay (was 0.9990)
-            2: 0.9995,  # Changed from 0.9992
-            3: 0.9997,  # Changed from 0.9995
-            4: 0.9998   # Changed from 0.9997 (very slow fine-tuning)
-        }
-        lr_decay_rate = stage_lr_decay.get(agent.curriculum_stage, 0.9995)
+        lr_decay_rate = STAGE_LR_DECAY.get(agent.curriculum_stage, 0.9995)
         
         # Get current learning rate from optimizer
         current_lr = agent.optimizer.param_groups[0]['lr']
@@ -285,6 +261,12 @@ def train_enhanced_dqn(episodes=1000, use_existing=True, save_interval=50, learn
         
         # Calculate episode time
         episode_time = time.time() - episode_start
+        
+        # Update target network periodically for stable Q-learning
+        if episode % 10 == 0:
+            agent.update_target_network()
+            if episode % 50 == 0:  # Log every 50 episodes
+                print(f"[TARGET NET] Updated target network at episode {episode}", flush=True)
         
         # Print progress with A* guidance info + learning rate
         print(f"Enhanced DQN Episode: {episode}/{total_episodes}, "
@@ -355,7 +337,37 @@ if __name__ == "__main__":
     parser.add_argument('--batch-size', type=int, default=None, help='Batch size for training (32-512)')
     parser.add_argument('--model-number', type=int, default=None, help='Model number for saving (e.g., 1, 2, 3)')
     
+    # Stuck detection parameters
+    parser.add_argument('--enable-stuck-detection', action='store_true', help='Enable stuck detection (default from constants.py)')
+    parser.add_argument('--disable-stuck-detection', action='store_true', help='Disable stuck detection')
+    parser.add_argument('--stuck-sensitivity', type=int, default=None, help='Stuck counter threshold (1-10, default from constants.py)')
+    parser.add_argument('--stuck-cooldown', type=int, default=None, help='Cooldown between boosts in episodes (default from constants.py)')
+    parser.add_argument('--stuck-boost', type=float, default=None, help='Epsilon boost amount (default from constants.py)')
+    parser.add_argument('--stuck-improvement', type=float, default=None, help='Improvement threshold (default from constants.py)')
+    
     args = parser.parse_args()
+    
+    # Apply stuck detection settings to constants (will be used by agent)
+    if args.disable_stuck_detection:
+        import constants
+        constants.ENABLE_STUCK_DETECTION = False
+        print("[CONFIG] Stuck detection: DISABLED")
+    elif args.enable_stuck_detection:
+        import constants
+        constants.ENABLE_STUCK_DETECTION = True
+        if args.stuck_sensitivity is not None:
+            constants.STUCK_COUNTER_THRESHOLD = args.stuck_sensitivity
+        if args.stuck_cooldown is not None:
+            constants.STUCK_BOOST_COOLDOWN = args.stuck_cooldown
+        if args.stuck_boost is not None:
+            constants.STUCK_EPSILON_BOOST = args.stuck_boost
+        if args.stuck_improvement is not None:
+            constants.STUCK_IMPROVEMENT_THRESHOLD = args.stuck_improvement
+        print(f"[CONFIG] Stuck detection: ENABLED")
+        print(f"  • Sensitivity: {constants.STUCK_COUNTER_THRESHOLD} checks ({constants.STUCK_COUNTER_THRESHOLD * 50} episodes)")
+        print(f"  • Cooldown: {constants.STUCK_BOOST_COOLDOWN} episodes")
+        print(f"  • Boost: +{constants.STUCK_EPSILON_BOOST}")
+        print(f"  • Min improvement: {constants.STUCK_IMPROVEMENT_THRESHOLD} points")
     
     train_enhanced_dqn(
         episodes=args.episodes,

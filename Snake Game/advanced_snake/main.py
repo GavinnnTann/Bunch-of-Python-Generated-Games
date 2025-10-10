@@ -18,6 +18,7 @@ from q_learning import SnakeQLearningAgent
 from advanced_dqn import AdvancedDQNAgent
 from enhanced_dqn import EnhancedDQNAgent  # Import Enhanced DQN
 from stable_dqn import StableDQNAgent  # Import Stable DQN
+from curriculum_dqn import CurriculumDQNAgent  # Import Curriculum DQN
 
 class SnakeGame:
     def __init__(self):
@@ -97,7 +98,10 @@ class SnakeGame:
             filename = os.path.basename(model_path)
             
             # Determine model type
-            if "stable" in filename.lower():
+            if "curriculum" in filename.lower():
+                model_type = "Curriculum"
+                agent_class = CurriculumDQNAgent
+            elif "stable" in filename.lower():
                 model_type = "Stable"
                 agent_class = StableDQNAgent
             elif "enhanced" in filename.lower():
